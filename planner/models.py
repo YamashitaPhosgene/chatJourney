@@ -2,6 +2,8 @@
 
 from django.db import models
 from django.contrib.auth.models import User
+from datetime import timedelta
+from model_utils.managers import InheritanceManager
 
 class Trip(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='trips')
@@ -16,18 +18,94 @@ class Trip(models.Model):
         return self.title
 
 
-class Day(models.Model):
-    trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name='days')
+class Event(models.Model):
+    EVENT_TYPES = [
+        ('activity', '活动'),
+        ('departure', '出发'),
+        ('arrival', '到达'),
+        ('checkin', '入住'),
+        ('checkout', '退房'),
+        ('stay', '住宿'),
+    ]
+
+    objects = InheritanceManager()
+
+    trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name='events')
+    type = models.CharField(max_length=20, choices=EVENT_TYPES)
     date = models.DateField()
-    day_index = models.PositiveIntegerField()
+    start_time = models.TimeField()
+    duration = models.DurationField(default=timedelta(hours=1))
+    cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    location = models.ForeignKey('Location', on_delete=models.SET_NULL, null=True, blank=True)
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
     notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = (('trip', 'day_index'), ('trip', 'date'))
-        ordering = ['trip', 'day_index']
+        ordering = ['date', 'start_time']
 
     def __str__(self):
-        return f"{self.trip.title} - Day {self.day_index} ({self.date})"
+        return f"{self.date} {self.start_time} - {self.title}"
+
+
+class Activity(Event):
+    CATEGORY_CHOICES = [
+        ('sightseeing', '游览'),
+        ('dining', '餐饮'),
+        ('transport', '交通'),
+        ('rest', '休息'),
+        ('free', '自由活动'),
+        ('custom', '自定义'),
+    ]
+    
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='custom')
+
+    def save(self, *args, **kwargs):
+        self.type = 'activity'
+        super().save(*args, **kwargs)
+
+
+class Transport(Event):
+    MODE_CHOICES = [
+        ('fly', '飞机'),
+        ('train', '火车'),
+        ('bus', '大巴'),
+        ('metro', '地铁'),
+        ('taxi', '出租'),
+        ('car', '自驾'),
+        ('other', '其他'),
+    ]
+    
+    mode = models.CharField(max_length=20, choices=MODE_CHOICES)
+    destination = models.ForeignKey(
+        'Location', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='transport_destinations'
+    )
+
+    def save(self, *args, **kwargs):
+        if not hasattr(self, 'type') or not self.type:
+            self.type = 'departure'  # 默认为departure，可以在创建时指定为arrival
+        super().save(*args, **kwargs)
+
+
+class Accommodation(Event):
+    linked_accommodation = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='related_accommodations'
+    )
+
+    def save(self, *args, **kwargs):
+        if not hasattr(self, 'type') or not self.type:
+            self.type = 'stay'  # 默认为stay，可以在创建时指定为checkin或checkout
+        super().save(*args, **kwargs)
 
 
 class Location(models.Model):
@@ -52,92 +130,15 @@ class Location(models.Model):
         return self.name
 
 
-class Activity(models.Model):
-    CATEGORY_CHOICES = [
-        ('sightseeing', '游览'),
-        ('dining', '餐饮'),
-        ('transport', '交通'),
-        ('rest', '休息'),
-        ('free', '自由活动'),
-        ('custom', '自定义'),
-    ]
-    day = models.ForeignKey(Day, on_delete=models.CASCADE, related_name='activities')
-    title = models.CharField(max_length=200)
-    description = models.TextField(blank=True)
-    start_time = models.TimeField()
-    end_time = models.TimeField()
-    location = models.ForeignKey(Location, on_delete=models.SET_NULL, null=True, blank=True)
-    sequence = models.PositiveIntegerField(default=0)
-    cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='custom')
-    notes = models.TextField(blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['day', 'start_time', 'sequence']
-
-    def __str__(self):
-        return f"{self.day} - {self.title}"
-
-
-class Transport(models.Model):
-    MODE_CHOICES = [
-        ('fly', '飞机'),
-        ('train', '火车'),
-        ('bus', '大巴'),
-        ('metro', '地铁'),
-        ('taxi', '出租'),
-        ('car', '自驾'),
-        ('other', '其他'),
-    ]
-    day = models.ForeignKey(Day, on_delete=models.CASCADE, related_name='transports')
-    mode = models.CharField(max_length=20, choices=MODE_CHOICES)
-    from_location = models.ForeignKey(
-        Location, on_delete=models.SET_NULL, null=True, blank=True, related_name='transport_starts'
-    )
-    to_location = models.ForeignKey(
-        Location, on_delete=models.SET_NULL, null=True, blank=True, related_name='transport_ends'
-    )
-    departure_datetime = models.DateTimeField()
-    arrival_datetime = models.DateTimeField()
-    cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+class Day(models.Model):
+    trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name='days')
+    date = models.DateField()
+    day_index = models.PositiveIntegerField()
     notes = models.TextField(blank=True)
 
     class Meta:
-        ordering = ['departure_datetime']
+        unique_together = (('trip', 'day_index'), ('trip', 'date'))
+        ordering = ['trip', 'day_index']
 
     def __str__(self):
-        return (f"{self.day} | {self.mode} "
-                f"{self.from_location.name if self.from_location else '未知'} → "
-                f"{self.to_location.name if self.to_location else '未知'}")
-
-
-class Accommodation(models.Model):
-    """
-    已移除 check_in_datetime/check_out_datetime 存储字段。
-    自链式：一条记录表示同日住宿；前端只传入一次完整的 checkin/checkout
-    后端拆分成每天一条并串成链。
-    """
-    day = models.ForeignKey(Day, on_delete=models.CASCADE, related_name='accommodations')
-    location = models.ForeignKey(
-        Location, on_delete=models.SET_NULL, null=True, blank=True
-    )
-    cost = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    notes = models.TextField(blank=True)
-
-    predecessor = models.ForeignKey(
-        'self', on_delete=models.SET_NULL, null=True, blank=True,
-        related_name='successor_accommodations'
-    )
-    successor = models.ForeignKey(
-        'self', on_delete=models.SET_NULL, null=True, blank=True,
-        related_name='predecessor_accommodations'
-    )
-
-    class Meta:
-        ordering = ['day']
-
-    def __str__(self):
-        loc_name = self.location.name if self.location else '未知地点'
-        return f"{self.day} | {loc_name}，费用¥{self.cost or '0.00'}"
+        return f"{self.trip.title} - Day {self.day_index} ({self.date})"

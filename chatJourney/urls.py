@@ -19,16 +19,16 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from planner import views as planner_views
+from talker.views import ChatView, ChatHistoryView
 
 router = DefaultRouter()
 router.register(r'trips', planner_views.TripViewSet, basename='trip')
-router.register(r'days', planner_views.DayViewSet, basename='day')
-router.register(r'activities', planner_views.ActivityViewSet, basename='activity')
-router.register(r'transports', planner_views.TransportViewSet, basename='transport')
-router.register(r'accommodations', planner_views.AccommodationViewSet, basename='accommodation')
+router.register(r'events', planner_views.EventViewSet, basename='event')
 router.register(r'locations', planner_views.LocationViewSet, basename='location')
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path('api/', include(router.urls)),
+    path('api/chat/', ChatView.as_view(), name='chat'),
+    path('api/chat/history/', ChatHistoryView.as_view(), name='chat_history'),
 ]

@@ -2,10 +2,11 @@
 
 from rest_framework import serializers
 from django.contrib.auth.models import User
+from model_utils.managers import InheritanceManager
 from .models import (
     Trip,
-    Day,
     Location,
+    Event,
     Activity,
     Transport,
     Accommodation,
@@ -27,14 +28,7 @@ class LocationSerializer(serializers.ModelSerializer):
         ]
 
 
-class ActivitySerializer(serializers.ModelSerializer):
-    day = serializers.PrimaryKeyRelatedField(read_only=True)
-    trip_id = serializers.PrimaryKeyRelatedField(
-        queryset=Trip.objects.all(),
-        write_only=True
-    )
-    date = serializers.DateField(write_only=True)
-
+class EventSerializer(serializers.ModelSerializer):
     location = LocationSerializer(read_only=True)
     location_id = serializers.PrimaryKeyRelatedField(
         queryset=Location.objects.all(),
@@ -45,144 +39,93 @@ class ActivitySerializer(serializers.ModelSerializer):
     )
 
     class Meta:
-        model = Activity
+        model = Event
         fields = [
             'id',
-            'day',
-            'trip_id',
+            'trip',
+            'type',
             'date',
-            'title',
-            'description',
             'start_time',
-            'end_time',
+            'duration',
+            'cost',
             'location',
             'location_id',
-            'sequence',
-            'cost',
-            'category',
+            'title',
+            'description',
             'notes',
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['day', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+
+
+class ActivitySerializer(EventSerializer):
+    class Meta(EventSerializer.Meta):
+        model = Activity
+        fields = EventSerializer.Meta.fields + ['category']
 
     def create(self, validated_data):
-        trip = validated_data.pop('trip_id')
-        date = validated_data.pop('date')
-        day = Day.objects.get(trip=trip, date=date)
-        validated_data['day'] = day
+        validated_data['type'] = 'activity'
         return super().create(validated_data)
 
+    def to_representation(self, instance):
+        # 确保instance是Activity类型
+        if isinstance(instance, Event) and not isinstance(instance, Activity):
+            instance = Activity.objects.get(pk=instance.pk)
+        return super().to_representation(instance)
 
-class TransportSerializer(serializers.ModelSerializer):
-    day = serializers.PrimaryKeyRelatedField(read_only=True)
-    trip_id = serializers.PrimaryKeyRelatedField(
-        queryset=Trip.objects.all(),
-        write_only=True
-    )
 
-    from_location = LocationSerializer(read_only=True)
-    to_location = LocationSerializer(read_only=True)
-    from_location_id = serializers.PrimaryKeyRelatedField(
+class TransportSerializer(EventSerializer):
+    destination = LocationSerializer(read_only=True)
+    destination_id = serializers.PrimaryKeyRelatedField(
         queryset=Location.objects.all(),
-        source='from_location',
-        write_only=True,
-        required=False,
-        allow_null=True
-    )
-    to_location_id = serializers.PrimaryKeyRelatedField(
-        queryset=Location.objects.all(),
-        source='to_location',
+        source='destination',
         write_only=True,
         required=False,
         allow_null=True
     )
 
-    class Meta:
+    class Meta(EventSerializer.Meta):
         model = Transport
-        fields = [
-            'id',
-            'day',
-            'trip_id',
+        fields = EventSerializer.Meta.fields + [
             'mode',
-            'from_location',
-            'from_location_id',
-            'to_location',
-            'to_location_id',
-            'departure_datetime',
-            'arrival_datetime',
-            'cost',
-            'notes',
+            'destination',
+            'destination_id',
         ]
-        read_only_fields = ['day']
 
     def create(self, validated_data):
-        trip = validated_data.pop('trip_id')
-        dep = validated_data.get('departure_datetime')
-        day = Day.objects.get(trip=trip, date=dep.date())
-        validated_data['day'] = day
+        event_type = self.context.get('event_type', 'departure')
+        validated_data['type'] = event_type
         return super().create(validated_data)
 
+    def to_representation(self, instance):
+        # 确保instance是Transport类型
+        if isinstance(instance, Event) and not isinstance(instance, Transport):
+            instance = Transport.objects.get(pk=instance.pk)
+        return super().to_representation(instance)
 
-class AccommodationSerializer(serializers.ModelSerializer):
-    day = serializers.PrimaryKeyRelatedField(read_only=True)
 
-    trip_id = serializers.PrimaryKeyRelatedField(
-        queryset=Trip.objects.all(),
-        write_only=True
+class AccommodationSerializer(EventSerializer):
+    linked_accommodation = serializers.PrimaryKeyRelatedField(
+        queryset=Accommodation.objects.all(),
+        required=False,
+        allow_null=True
     )
-    location = LocationSerializer(read_only=True)
-    location_id = serializers.PrimaryKeyRelatedField(
-        queryset=Location.objects.all(),
-        source='location',
-        write_only=True
-    )
 
-    check_in_datetime = serializers.DateTimeField(write_only=True)
-    check_out_datetime = serializers.DateTimeField(write_only=True, required=False, allow_null=True)
-
-    cost = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
-    notes = serializers.CharField(required=False, allow_blank=True)
-
-    class Meta:
+    class Meta(EventSerializer.Meta):
         model = Accommodation
-        fields = [
-            'id',
-            'day',
-            'trip_id',
-            'location',
-            'location_id',
-            'check_in_datetime',
-            'check_out_datetime',
-            'cost',
-            'notes',
-        ]
-        read_only_fields = ['day']
+        fields = EventSerializer.Meta.fields + ['linked_accommodation']
 
+    def create(self, validated_data):
+        event_type = self.context.get('event_type', 'stay')
+        validated_data['type'] = event_type
+        return super().create(validated_data)
 
-class DaySerializer(serializers.ModelSerializer):
-    activities = ActivitySerializer(many=True, read_only=True)
-    transports = TransportSerializer(many=True, read_only=True)
-    accommodations = AccommodationSerializer(many=True, read_only=True)
-
-    class Meta:
-        model = Day
-        fields = [
-            'id',
-            'trip',
-            'date',
-            'day_index',
-            'notes',
-            'activities',
-            'transports',
-            'accommodations',
-        ]
-
-
-class DayNestedCreateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Day
-        fields = ['date', 'day_index', 'notes']
+    def to_representation(self, instance):
+        # 确保instance是Accommodation类型
+        if isinstance(instance, Event) and not isinstance(instance, Accommodation):
+            instance = Accommodation.objects.get(pk=instance.pk)
+        return super().to_representation(instance)
 
 
 class TripSerializer(serializers.ModelSerializer):
@@ -208,7 +151,7 @@ class TripSerializer(serializers.ModelSerializer):
 
 class TripDetailSerializer(serializers.ModelSerializer):
     user = serializers.StringRelatedField(read_only=True)
-    days = DaySerializer(many=True, read_only=True)
+    events = serializers.SerializerMethodField()
 
     class Meta:
         model = Trip
@@ -221,5 +164,27 @@ class TripDetailSerializer(serializers.ModelSerializer):
             'end_date',
             'created_at',
             'updated_at',
-            'days',
+            'events',
         ]
+
+    def get_events(self, obj):
+        """
+        返回按日期和时间排序的所有事件
+        使用select_subclasses()确保获取到正确的子类实例
+        """
+        events = Event.objects.filter(trip=obj).select_subclasses().order_by('date', 'start_time')
+        serialized_events = []
+        
+        for event in events:
+            if isinstance(event, Activity):
+                serializer = ActivitySerializer(event)
+            elif isinstance(event, Transport):
+                serializer = TransportSerializer(event)
+            elif isinstance(event, Accommodation):
+                serializer = AccommodationSerializer(event)
+            else:
+                serializer = EventSerializer(event)
+            
+            serialized_events.append(serializer.data)
+        
+        return serialized_events
