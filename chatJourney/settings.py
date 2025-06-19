@@ -10,8 +10,15 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
+from dotenv import load_dotenv
 from pathlib import Path
 import os
+
+# 获取 settings.py 所在目录
+SETTINGS_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# 加载同目录下的 .env 文件
+load_dotenv(os.path.join(SETTINGS_DIR, '.env'))
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent

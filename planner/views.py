@@ -28,7 +28,8 @@ from .serializers import (
     AccommodationSerializer,
     LocationSerializer
 )
-from .services import get_trip_timeline, validate_event_time
+from planner.services.trip_service import TripService
+from planner.services.event_service import EventService
 
 
 class TripViewSet(viewsets.ModelViewSet):
@@ -47,11 +48,8 @@ class TripViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], url_path='timeline(?:/(?P<day_index>[0-9]+))?')
     def timeline(self, request, pk=None, day_index=None):
         trip = self.get_object()
-        try:
-            response_data = get_trip_timeline(trip, day_index)
-            return Response(response_data)
-        except ValidationError as e:
-            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+        response_data = TripService.generate_timeline(trip, day_index)
+        return Response(response_data)
 
 
 class EventViewSet(viewsets.ModelViewSet):
@@ -67,29 +65,12 @@ class EventViewSet(viewsets.ModelViewSet):
         return self.queryset.filter(trip__user=self.request.user)
 
     def get_serializer_class(self):
-        # 如果是检索单个实例，根据实例类型选择序列化器
         if self.action in ['retrieve', 'update', 'partial_update'] and hasattr(self, 'get_object'):
             instance = self.get_object()
-            return self._get_serializer_for_type(instance.type)
-        
-        # 如果是创建新实例，根据请求数据中的类型选择序列化器
+            return EventService.get_serializer_for_type(instance.type)
         if self.action == 'create':
             event_type = self.request.data.get('type', '')
-            return self._get_serializer_for_type(event_type)
-            
-        # 如果是列表视图，使用基础序列化器
-        return EventSerializer
-
-    def _get_serializer_for_type(self, event_type):
-        """
-        根据事件类型返回对应的序列化器
-        """
-        if event_type == 'activity':
-            return ActivitySerializer
-        elif event_type in ['departure', 'arrival']:
-            return TransportSerializer
-        elif event_type in ['checkin', 'checkout', 'stay']:
-            return AccommodationSerializer
+            return EventService.get_serializer_for_type(event_type)
         return EventSerializer
 
     def perform_create(self, serializer):
@@ -97,7 +78,7 @@ class EventViewSet(viewsets.ModelViewSet):
         event_date = serializer.validated_data['date']
         event_start_time = serializer.validated_data['start_time']
         event_duration = serializer.validated_data.get('duration', timedelta(hours=1))
-        validate_event_time(trip, event_date, event_start_time, event_duration)
+        EventService.validate_event_time(trip, event_date, event_start_time, event_duration)
         serializer.save()
 
     def perform_update(self, serializer):
@@ -105,7 +86,7 @@ class EventViewSet(viewsets.ModelViewSet):
         event_date = serializer.validated_data.get('date', serializer.instance.date)
         event_start_time = serializer.validated_data.get('start_time', serializer.instance.start_time)
         event_duration = serializer.validated_data.get('duration', serializer.instance.duration)
-        validate_event_time(trip, event_date, event_start_time, event_duration)
+        EventService.validate_event_time(trip, event_date, event_start_time, event_duration)
         serializer.save()
 
 

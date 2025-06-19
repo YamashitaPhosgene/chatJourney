@@ -8,6 +8,7 @@ class TalkSession(models.Model):
     locations = models.JSONField(default=list, help_text="地点列表")
     start_date = models.DateField(null=True, blank=True, help_text="第一天日期")
     end_date = models.DateField(null=True, blank=True, help_text="最后一天日期")
+    state = models.JSONField(default=dict, blank=True, help_text="当前对话状态，包含阶段、意图等信息")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
