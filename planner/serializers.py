@@ -65,11 +65,11 @@ class ActivitySerializer(EventSerializer):
         fields = EventSerializer.Meta.fields + ['category']
 
     def create(self, validated_data):
-        validated_data['type'] = 'activity'
+        if 'type' not in validated_data:
+            validated_data['type'] = 'activity'
         return super().create(validated_data)
 
     def to_representation(self, instance):
-        # 确保instance是Activity类型
         if isinstance(instance, Event) and not isinstance(instance, Activity):
             instance = Activity.objects.get(pk=instance.pk)
         return super().to_representation(instance)
@@ -93,13 +93,7 @@ class TransportSerializer(EventSerializer):
             'destination_id',
         ]
 
-    def create(self, validated_data):
-        event_type = self.context.get('event_type', 'departure')
-        validated_data['type'] = event_type
-        return super().create(validated_data)
-
     def to_representation(self, instance):
-        # 确保instance是Transport类型
         if isinstance(instance, Event) and not isinstance(instance, Transport):
             instance = Transport.objects.get(pk=instance.pk)
         return super().to_representation(instance)
@@ -116,13 +110,7 @@ class AccommodationSerializer(EventSerializer):
         model = Accommodation
         fields = EventSerializer.Meta.fields + ['linked_accommodation']
 
-    def create(self, validated_data):
-        event_type = self.context.get('event_type', 'stay')
-        validated_data['type'] = event_type
-        return super().create(validated_data)
-
     def to_representation(self, instance):
-        # 确保instance是Accommodation类型
         if isinstance(instance, Event) and not isinstance(instance, Accommodation):
             instance = Accommodation.objects.get(pk=instance.pk)
         return super().to_representation(instance)

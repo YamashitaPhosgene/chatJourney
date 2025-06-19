@@ -19,12 +19,13 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from planner import views as planner_views
-from talker.views import ChatView, ChatHistoryView
+from talker.views import ChatView, ChatHistoryView, TalkSessionViewSet
 
 router = DefaultRouter()
 router.register(r'trips', planner_views.TripViewSet, basename='trip')
 router.register(r'events', planner_views.EventViewSet, basename='event')
 router.register(r'locations', planner_views.LocationViewSet, basename='location')
+router.register(r'talk_sessions', TalkSessionViewSet, basename='talksession')
 
 urlpatterns = [
     path("admin/", admin.site.urls),

@@ -7,6 +7,9 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from talker.services.chat_service import ChatService
 import json
+from rest_framework import viewsets, permissions, mixins
+from .models import TalkSession
+from .serializers import TalkSessionSerializer
 
 @method_decorator(csrf_exempt, name='dispatch')
 class ChatView(View):
@@ -110,3 +113,18 @@ class ChatHistoryView(View):
                 "error": True,
                 "message": str(e)
             }, status=500)
+
+class TalkSessionViewSet(mixins.RetrieveModelMixin,
+                         mixins.ListModelMixin,
+                         mixins.DestroyModelMixin,
+                         viewsets.GenericViewSet):
+    queryset = TalkSession.objects.all().order_by('-created_at')
+    serializer_class = TalkSessionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        # 只返回当前用户的会话
+        return self.queryset.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
