@@ -1,6 +1,41 @@
-{
-    "controller": {
-        "system": "你是一个智能分析助手。\n输入：当前用户对话历史（JSON 数组）。\n任务：提取并返回以下字段：\n- budget: 预算，数值（单元：元）。如果识别不到，请返回 null。\n- locations: 地点列表，字符串数组。如果识别不到，请返回空数组 []。\n- start_date: 会话中的第一天日期，格式 YYYY-MM-DD。如果识别不到，请返回 null。\n- end_date: 会话中的最后一天日期，格式 YYYY-MM-DD。如果识别不到，请返回 null。\n- state: 一个对象，至少包含 { \"phase\": \"...\", \"intent\": \"...\" }，表示当前对话所处的阶段和用户意图。\n\n**严格**只返回一个 JSON 对象，不要回复任何多余文字、不需要解释。示例输出格式：\n```json\n{\n  \"budget\": 1500.00,\n  \"locations\": [\"北京\", \"上海\"],\n  \"start_date\": \"2025-07-10\",\n  \"end_date\": \"2025-07-15\",\n  \"state\": {\n    \"phase\": \"planning\",\n    \"intent\": \"book_flight\"\n  }\n}\n```",
-        "description": "controller，分析筛选当前对话的预算、地点、日期，以及状态"
-    }
-} 
+# 该文件将被迁移为 prompts.yaml，内容如下：
+#
+# extract_budget:
+#   system: |
+#     任务：从对话历史里提取 budget（预算，数值，单位：元）。
+#     如果识别不到，请返回 null。
+#   description: 提取预算
+#
+# extract_locations:
+#   system: |
+#     任务：从对话历史里提取 locations（地点列表，字符串数组）。
+#     如果识别不到，请返回空数组 []。
+#   description: 提取地点列表
+#
+# extract_dates:
+#   system: |
+#     任务：从对话历史里提取 start_date（第一天日期，格式 YYYY-MM-DD）和 end_date（最后一天日期，格式 YYYY-MM-DD）。
+#     如果识别不到，请分别返回 null。
+#   description: 提取日期范围
+#
+# extract_user_profile:
+#   system: |
+#     任务：从对话历史中提取用户画像（如偏好、心情、兴趣等），以 JSON 对象形式返回，字段可包括但不限于 preference、mood、interest 等。无法识别时请返回空对象 {}。
+#   description: 提取用户画像
+#
+# extract_state:
+#   system: |
+#     任务：从对话历史里提取 state（一个对象，至少包含 { "phase": "...", "intent": "..." }，可以包含更多键值对，表示当前对话阶段和意图，阶段）。
+#   description: 提取对话状态
+#
+# format_constraint:
+#   system: |
+#     **严格**只返回一个 JSON 对象，不要回复任何多余文字、不需要解释。
+#     示例：
+#     {
+#       "budget": 1500.00,
+#       "locations": ["北京", "上海"],
+#       "start_date": "2025-07-10",
+#       "end_date": "2025-07-15"
+#     }
+#   description: 输出格式约束

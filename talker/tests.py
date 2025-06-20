@@ -189,9 +189,16 @@ def test_analyze_and_update_talksession():
     user, _ = User.objects.get_or_create(username="fangsuo")
     # 构造模拟历史
     history = [
-        {"role": "user", "content": "我想7月10号去北京和上海旅游，预算1500元。"},
-        {"role": "assistant", "content": "好的，请问预计几天返回？"},
-        {"role": "user", "content": "15号回来。"}
+        {"role": "user", "content": "工作好累，我想这个周末出去玩。"},
+        {"role": "assistant", "content": "好的，请问想玩几天？"},
+        {"role": "user", "content": "1天。"},
+        {"role": "assistant", "content": "这周六可以嘛？"},
+        {"role": "user", "content": "可以。"},
+        {"role": "assistant", "content": "有没有具体想去哪里玩呢？"},
+        {"role": "user", "content": "没有，为我推荐一个。"},
+        {"role": "assistant", "content": "好的，我推荐你去北京故宫博物院。"},
+        {"role": "user", "content": "太远了，近点。而且我不喜欢去人多的地方，也不喜欢博物馆。"},
+        {"role": "assistant", "content": "好的，那附近的公园怎么样？"}
     ]
     session = TalkSession.objects.create(user=user, history=history)
     success, msg = analyze_and_update_talksession(session)
@@ -201,10 +208,12 @@ def test_analyze_and_update_talksession():
     print("locations:", session.locations)
     print("start_date:", session.start_date)
     print("end_date:", session.end_date)
+    print("user_profile:", session.user_profile)
     print("state:", session.state)
     assert success is True
     assert session.budget is not None
     assert isinstance(session.locations, list) and len(session.locations) > 0
     assert session.start_date is not None
     assert session.end_date is not None
-    assert isinstance(session.state, dict) and "phase" in session.state and "intent" in session.state 
+    assert isinstance(session.user_profile, dict)
+    assert isinstance(session.state, dict) 

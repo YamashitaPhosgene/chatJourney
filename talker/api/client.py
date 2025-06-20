@@ -9,6 +9,7 @@ from typing import Optional, Dict, Any
 from django.conf import settings
 from .auth import AuthUtils
 from .exceptions import VivoGPTError
+from talker.config import load_prompts
 
 class VivoGPT:
     """蓝心大模型API客户端"""
@@ -35,15 +36,8 @@ class VivoGPT:
         self.prompts = self._load_prompts()
     
     def _load_prompts(self, config_path: str = None) -> dict:
-        """加载prompt配置"""
-        if config_path is None:
-            config_path = os.path.join(settings.BASE_DIR, 'talker', 'config', 'prompts.json')
-            
-        if not os.path.exists(config_path):
-            raise FileNotFoundError(f"配置文件 {config_path} 不存在")
-        
-        with open(config_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        """加载prompt配置，优先YAML格式"""
+        return load_prompts()
     
     def set_debug_mode(self, mode: bool = True) -> None:
         """设置调试模式"""
