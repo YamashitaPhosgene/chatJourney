@@ -2,7 +2,7 @@ import os
 from django.conf import settings
 import yaml
 import json
-
+ 
 # 获取配置文件路径
 PROMPTS_YAML_PATH = os.path.join(settings.BASE_DIR, 'talker', 'config', 'prompts.yaml')
 PROMPTS_JSON_PATH = os.path.join(settings.BASE_DIR, 'talker', 'config', 'prompts.json')

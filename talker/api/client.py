@@ -5,11 +5,12 @@ import requests
 import json
 import uuid
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 from django.conf import settings
 from .auth import AuthUtils
 from .exceptions import VivoGPTError
 from talker.config import load_prompts
+from requests import Response
 
 class VivoGPT:
     """蓝心大模型API客户端"""
@@ -35,7 +36,7 @@ class VivoGPT:
         # 加载预设
         self.prompts = self._load_prompts()
     
-    def _load_prompts(self, config_path: str = None) -> dict:
+    def _load_prompts(self) -> dict:
         """加载prompt配置，优先YAML格式"""
         return load_prompts()
     
@@ -75,7 +76,7 @@ class VivoGPT:
         if messages[0]["role"] != "user":
             raise ValueError("第一条消息的role必须是user")
     
-    def chat(self, prompt: str, type: Optional[str] = None, temperature: float = 0.7, max_tokens: int = 2048, stream: bool = False) -> Dict[str, Any]:
+    def chat(self, prompt: str, type: Optional[str] = None, temperature: float = 0.7, max_tokens: int = 2048, stream: bool = False) -> Union[Dict[str, Any], Response]:
         """同步调用蓝心大模型API（单轮对话）"""
         self._validate_parameters(temperature, max_tokens)
         

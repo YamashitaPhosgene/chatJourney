@@ -18,7 +18,10 @@ def _call_extract(client, prompt_type, history):
     prompt = f"输入：{json.dumps(history, ensure_ascii=False)}"
     try:
         response = client.chat(prompt, type=prompt_type)
-        content = response.get("data", {}).get("content", "")
+        if isinstance(response, dict):
+            content = response.get("data", {}).get("content", "")
+        else:
+            content = ""
         return prompt_type, content, None
     except Exception as e:
         logging.error(f"extract {prompt_type} 失败: {e}")
@@ -77,20 +80,31 @@ def analyze_and_update_talksession(session: TalkSession):
     format_prompt = f"输入：{json.dumps(format_input, ensure_ascii=False)}"
     try:
         response = client.chat(format_prompt, type="format_constraint")
-        content = response.get("data", {}).get("content", "")
+        if isinstance(response, dict):
+            content = response.get("data", {}).get("content", "")
+        else:
+            content = ""
         print(f"[DEBUG] 大模型format_constraint返回: {content}")
         # 处理 markdown 代码块包裹的 json，并提取 {...}
         if content:
             content = extract_json(content)
         result = json.loads(content)
         # 字段校验，防止污染
-        session.budget = result.get("budget") if isinstance(result.get("budget", None), (int, float, type(None))) else None
+        session.budget = result.get("budget") if isinstance(result.get("budget", None), (int, float, type(None), str)) else None
         session.locations = result.get("locations") if isinstance(result.get("locations", None), list) else []
         session.start_date = result.get("start_date") if isinstance(result.get("start_date", None), str) else None
         session.end_date = result.get("end_date") if isinstance(result.get("end_date", None), str) else None
         # 新增：自动更新用户画像
         user_profile = extract_results.get("extract_user_profile")
         session.user_profile = user_profile if isinstance(user_profile, dict) else {}
+        # 确保 user_profile 包含所有固定字段
+        expected_fields = [
+            "情感状态", "同行人员", "旅行风格", "兴趣爱好", "避雷", 
+            "饮食习惯", "年龄", "性别", "职业", "特殊需求"
+        ]
+        for field in expected_fields:
+            if field not in session.user_profile:
+                session.user_profile[field] = "未提及"
         session.save()
     except VivoGPTError as e:
         logging.error(f"format_constraint 阶段大模型API错误: {e.message}")

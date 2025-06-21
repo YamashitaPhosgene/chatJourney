@@ -3,6 +3,7 @@
 
 from typing import Dict, Any, Optional, Union
 from talker.api import VivoGPT, VivoGPTError
+from requests import Response
 
 class ChatService:
     """聊天服务类"""
@@ -10,7 +11,7 @@ class ChatService:
     def __init__(self):
         self.vivo_client = VivoGPT()
     
-    def process_chat(self, message: str, chat_type: Optional[str] = None, temperature: float = 0.7, max_tokens: int = 2048) -> Dict[str, Any]:
+    def process_chat(self, message: str, chat_type: Optional[str] = None, temperature: float = 0.7, max_tokens: int = 2048) -> Union[Dict[str, Any], Response]:
         """处理聊天请求
         
         Args:
@@ -64,7 +65,7 @@ class ChatService:
             parts.append(f"上下文：{state['context']}")
         return '；'.join(parts)
     
-    def process_chat_with_history(self, messages: list, state: Optional[Dict[str, Any]] = None, temperature: float = 0.7, max_tokens: int = 2048) -> Dict[str, Any]:
+    def process_chat_with_history(self, messages: list, state: Optional[Dict[str, Any]] = None, temperature: float = 0.7, max_tokens: int = 2048) -> Union[Dict[str, Any], Response]:
         """处理带历史记录的聊天请求
         
         Args:
