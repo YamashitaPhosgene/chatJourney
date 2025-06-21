@@ -94,7 +94,7 @@ format_constraint:
     {
       "budget": "5000-8000",
       "locations": ["北京", "上海"],
-      "start_date": "2025-07-10",
+      "start_date": null,
       "end_date": "2025-07-15"
     }
   description: 输出格式约束 

@@ -66,7 +66,7 @@ class TravelAssistantFSM:
         self.machine.add_transition('slot_invalid_dates', 'SLOT_FILLING_DATES', 'SLOT_FILLING_DATES', after='ask_dates_again')
         
         # 用户画像槽位
-        self.machine.add_transition('user_provides_profile', 'SLOT_FILLING_PROFILE', 'CONFIRMATION', after='ask_confirmation')
+        self.machine.add_transition('user_provides_profile', 'SLOT_FILLING_PROFILE', 'CONFIRMATION', after='handle_profile')
         self.machine.add_transition('slot_invalid_profile', 'SLOT_FILLING_PROFILE', 'SLOT_FILLING_PROFILE', after='ask_profile_again')
         
         # 确认阶段
@@ -89,7 +89,7 @@ class TravelAssistantFSM:
     
     # ========== 状态进入处理函数 ==========
     
-    def _on_enter_fill_destination(self):
+    def _on_enter_fill_destination(self, *args, **kwargs):
         """进入填充目的地状态"""
         self.session.state = {
             "phase": "slot_filling",
@@ -98,7 +98,7 @@ class TravelAssistantFSM:
         }
         self.session.save()
     
-    def _on_enter_fill_budget(self):
+    def _on_enter_fill_budget(self, *args, **kwargs):
         """进入填充预算状态"""
         self.session.state = {
             "phase": "slot_filling",
@@ -107,7 +107,7 @@ class TravelAssistantFSM:
         }
         self.session.save()
     
-    def _on_enter_fill_dates(self):
+    def _on_enter_fill_dates(self, *args, **kwargs):
         """进入填充日期状态"""
         self.session.state = {
             "phase": "slot_filling",
@@ -116,7 +116,7 @@ class TravelAssistantFSM:
         }
         self.session.save()
     
-    def _on_enter_fill_profile(self):
+    def _on_enter_fill_profile(self, *args, **kwargs):
         """进入填充用户画像状态"""
         self.session.state = {
             "phase": "slot_filling",
@@ -125,7 +125,7 @@ class TravelAssistantFSM:
         }
         self.session.save()
     
-    def _on_enter_confirmation(self):
+    def _on_enter_confirmation(self, *args, **kwargs):
         """进入确认状态"""
         self.session.state = {
             "phase": "confirmation",
@@ -133,8 +133,10 @@ class TravelAssistantFSM:
             "context": "汇总信息并等待用户确认"
         }
         self.session.save()
+        # 调用询问确认函数
+        self.ask_confirmation()
     
-    def _on_enter_completed(self):
+    def _on_enter_completed(self, *args, **kwargs):
         """进入完成状态"""
         self.session.state = {
             "phase": "completed",
@@ -143,7 +145,7 @@ class TravelAssistantFSM:
         }
         self.session.save()
     
-    def _on_enter_error(self):
+    def _on_enter_error(self, *args, **kwargs):
         """进入错误状态"""
         self.session.state = {
             "phase": "error",
@@ -154,83 +156,83 @@ class TravelAssistantFSM:
     
     # ========== 动作函数 ==========
     
-    def ask_destination(self):
+    def ask_destination(self, *args, **kwargs):
         """询问目的地"""
         logging.info("询问用户目的地")
         return "您这次想去哪个城市或景区呢？"
     
-    def handle_destination(self, value):
+    def handle_destination(self, value, *args, **kwargs):
         """处理目的地信息"""
         self.slots['destination'] = value
         logging.info(f"目的地已设置: {value}")
     
-    def ask_destination_again(self):
+    def ask_destination_again(self, *args, **kwargs):
         """重新询问目的地"""
         logging.info("重新询问用户目的地")
         return "抱歉，我没有理解您想去的地方。请重新告诉我您的目的地。"
     
-    def ask_budget(self):
+    def ask_budget(self, *args, **kwargs):
         """询问预算"""
         logging.info("询问用户预算")
         return "您的预算大概是？比如 3000–5000 元/人。"
     
-    def handle_budget(self, value):
+    def handle_budget(self, value, *args, **kwargs):
         """处理预算信息"""
         self.slots['budget'] = value
         logging.info(f"预算已设置: {value}")
     
-    def ask_budget_again(self):
+    def ask_budget_again(self, *args, **kwargs):
         """重新询问预算"""
         logging.info("重新询问用户预算")
         return "抱歉，我没有理解您的预算信息。请重新告诉我您的预算。"
     
-    def ask_dates(self):
+    def ask_dates(self, *args, **kwargs):
         """询问日期"""
         logging.info("询问用户日期")
         return "您计划什么时候出发、什么时候回来？"
     
-    def handle_dates(self, value):
+    def handle_dates(self, value, *args, **kwargs):
         """处理日期信息"""
         self.slots['dates'] = value
         logging.info(f"日期已设置: {value}")
     
-    def ask_dates_again(self):
+    def ask_dates_again(self, *args, **kwargs):
         """重新询问日期"""
         logging.info("重新询问用户日期")
         return "抱歉，我没有理解您的日期信息。请重新告诉我您的出发和返回日期。"
     
-    def ask_profile(self):
+    def ask_profile(self, *args, **kwargs):
         """询问用户画像"""
         logging.info("询问用户画像")
         return "最后请告诉我：同行人数和关系，以及您的旅行风格或其他偏好/需求。"
     
-    def handle_profile(self, value):
+    def handle_profile(self, value, *args, **kwargs):
         """处理用户画像信息"""
         self.slots['profile'] = value
         logging.info(f"用户画像已设置: {value}")
     
-    def ask_profile_again(self):
+    def ask_profile_again(self, *args, **kwargs):
         """重新询问用户画像"""
         logging.info("重新询问用户画像")
         return "抱歉，我没有理解您的信息。请重新告诉我同行人员和您的旅行偏好。"
     
-    def ask_confirmation(self):
+    def ask_confirmation(self, *args, **kwargs):
         """询问确认"""
         summary = self._generate_summary()
         logging.info("询问用户确认信息")
-        return f"请确认以下信息是否都正确：\n{summary}\n如无误，请回复"确认"。"
+        return f"请确认以下信息是否都正确：\n{summary}\n如无误，请回复\"确认\"。"
     
-    def show_plan(self):
+    def show_plan(self, *args, **kwargs):
         """显示计划"""
         logging.info("显示旅行计划")
         return "好的，正在为您生成行程方案…（此处展示最终方案）"
     
-    def cancel_flow(self):
+    def cancel_flow(self, *args, **kwargs):
         """取消流程"""
         logging.info("用户取消流程")
         return "好的，已取消当前流程。"
     
-    def error_handler(self):
+    def error_handler(self, *args, **kwargs):
         """错误处理"""
         logging.error("状态机进入错误状态")
         return "抱歉，出现了一些问题。请重新开始。"
@@ -299,17 +301,23 @@ class TravelAssistantFSM:
                 'end_date': self.session.end_date
             }
         
-        # 更新用户画像
+        # 更新用户画像 - 与session_control中的字段保持一致
         if self.session.user_profile:
             profile_info = []
-            if self.session.user_profile.get('同行人员'):
-                profile_info.append(f"同行人员: {self.session.user_profile['同行人员']}")
-            if self.session.user_profile.get('旅行风格'):
-                profile_info.append(f"旅行风格: {self.session.user_profile['旅行风格']}")
-            if self.session.user_profile.get('兴趣爱好'):
-                profile_info.append(f"兴趣爱好: {self.session.user_profile['兴趣爱好']}")
+            expected_fields = [
+                "情感状态", "同行人员", "旅行风格", "兴趣爱好", "避雷", 
+                "饮食习惯", "年龄", "性别", "职业", "特殊需求"
+            ]
+            
+            for field in expected_fields:
+                value = self.session.user_profile.get(field)
+                if value and value != "未提及":
+                    profile_info.append(f"{field}: {value}")
+            
             if profile_info:
                 self.slots['profile'] = '; '.join(profile_info)
+            else:
+                self.slots['profile'] = None
     
     def _are_all_slots_filled(self) -> bool:
         """检查所有槽位是否都已填充"""
@@ -334,7 +342,10 @@ class TravelAssistantFSM:
         if self.slots['dates']:
             summary_parts.append(f"• dates: {self.slots['dates']}")
         if self.slots['profile']:
-            summary_parts.append(f"• profile: {self.slots['profile']}")
+            # 用户画像信息可能包含多个字段，分行显示
+            profile_lines = self.slots['profile'].split('; ')
+            for line in profile_lines:
+                summary_parts.append(f"• {line}")
         
         return "\n".join(summary_parts) if summary_parts else "暂无信息"
     

@@ -4,6 +4,17 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from talker.models import TalkSession
 from talker.api import VivoGPT, VivoGPTError
 import logging
+from datetime import datetime
+
+def is_valid_date(date_string):
+    """验证日期字符串是否为有效的YYYY-MM-DD格式"""
+    if not date_string or not isinstance(date_string, str):
+        return False
+    try:
+        datetime.strptime(date_string, '%Y-%m-%d')
+        return True
+    except ValueError:
+        return False
 
 def extract_json(content):
     """提取第一个 {...} 之间的内容，返回纯 JSON 字符串"""
@@ -92,8 +103,13 @@ def analyze_and_update_talksession(session: TalkSession):
         # 字段校验，防止污染
         session.budget = result.get("budget") if isinstance(result.get("budget", None), (int, float, type(None), str)) else None
         session.locations = result.get("locations") if isinstance(result.get("locations", None), list) else []
-        session.start_date = result.get("start_date") if isinstance(result.get("start_date", None), str) else None
-        session.end_date = result.get("end_date") if isinstance(result.get("end_date", None), str) else None
+        
+        # 日期字段验证
+        start_date = result.get("start_date")
+        end_date = result.get("end_date")
+        session.start_date = start_date if is_valid_date(start_date) else None
+        session.end_date = end_date if is_valid_date(end_date) else None
+        
         # 新增：自动更新用户画像
         user_profile = extract_results.get("extract_user_profile")
         session.user_profile = user_profile if isinstance(user_profile, dict) else {}
