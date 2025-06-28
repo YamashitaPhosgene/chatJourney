@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # encoding: utf-8
-
+#type: ignore
 """
 Django管理命令：测试小红书总结服务
 使用方法: python manage.py test_xiaohongshu_summary
