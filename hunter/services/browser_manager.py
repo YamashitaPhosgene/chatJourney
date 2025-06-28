@@ -222,7 +222,7 @@ class BrowserManager:
             
             # 处理URL
             try:
-            processed_url = self._process_url(url)
+                processed_url = self._process_url(url)
             except ValueError as e:
                 return f"URL格式错误: {str(e)}"
             

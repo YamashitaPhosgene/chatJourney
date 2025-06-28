@@ -35,4 +35,4 @@ urlpatterns = [
     path('api/chat/history/', ChatHistoryView.as_view(), name='chat_history'),
     path('api/hunter/', include('hunter.urls')),
     path('api/talker/', include('talker.urls')),
-]
+] 
