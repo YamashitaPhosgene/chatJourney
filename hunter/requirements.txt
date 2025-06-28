@@ -1,0 +1,14 @@
+# 浏览器自动化 (hunter模块特有)
+playwright>=1.40.0
+pytest-playwright>=0.4.0
+
+# 注意：以下依赖已在主requirements.txt中定义，无需重复安装
+# - pandas>=2.1.1
+# - numpy>=1.26.4
+# - asyncio>=3.4.3
+# - python-dotenv>=1.0.0
+# - requests>=2.31.0
+# - schedule>=1.2.0
+# - tqdm>=4.66.1
+# - fastapi>=0.95.1
+# - uvicorn>=0.22.0

@@ -1,0 +1,1502 @@
+2025-06-27 19:15:18,620 - talker.services.chat_service - INFO - 开始处理聊天请求 - chat_type: ask_destination, temperature: 0.7, max_tokens: 2048
+2025-06-27 19:15:18,621 - talker.services.chat_service - DEBUG - === FINAL PROMPT ===
+你是一个专业的旅行助手，正在帮助用户规划旅行。
+
+当前会话信息：
+- 当前阶段：slot_filling
+- 用户意图：fill_destination
+- 上下文：等待用户提供目的地信息
+- 已收集信息：暂无信息
+
+任务：
+如果用户主动提问（如介绍某地、玩法、美食、体验等），请先直接用详尽有趣的语言回答用户问题，展现你的专业和热情。答复后，再顺势自然地引导用户补充本次出行的关键信息（如目的地、预算、时间、同行等）。
+用自然、亲切的语气询问用户本次想去哪个城市或景区，避免机械式表达。
+要求：
+1. 语气要自然、亲切，像朋友间的对话
+2. 避免过于正式的询问方式
+3. 可以适当引导用户，比如提到一些热门目的地作为参考
+4. 回复要简洁明了，不要过于冗长
+
+输入：当前阶段：slot_filling
+用户意图：fill_destination
+上下文：等待用户提供目的地信息
+已收集信息：暂无信息
+
+
+你可以使用的工具如下:
+<APIs>
+[{'name': 'poi_search', 'description': '搜索指定地点的POI信息', 'parameters': {'type': 'object', 'properties': {'location': {'type': 'string', 'description': '搜索地点，例如：北京市海淀区'}, 'keyword': {'type': 'string', 'description': '搜索关键词，例如：餐厅、景点'}, 'radius': {'type': 'integer', 'description': '搜索半径（米），默认1000'}}, 'required': ['location', 'keyword']}}, {'name': 'search_notes', 'description': '搜索小红书笔记', 'parameters': {'type': 'object', 'properties': {'keywords': {'type': 'string', 'description': '搜索关键词'}, 'limit': {'type': 'integer', 'description': '返回结果数量限制，默认5'}}, 'required': ['keywords']}}, {'name': 'get_note_content', 'description': '获取小红书笔记详细内容', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}, {'name': 'get_note_comments', 'description': '获取小红书笔记评论', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}]
+</APIs>
+
+如果用户的问题需要调用工具，输出格式为：
+<APIs>
+[{"name": "函数名","parameters": {"参数名": "参数"}}]
+</APIs>
+否则直接回复用户。
+2025-06-27 19:15:18,625 - talker.services.chat_service - INFO - 使用模板prompt - chat_type: ask_destination
+2025-06-27 19:15:18,625 - talker.services.chat_service - DEBUG - 模板数据: {'input': '当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息', 'phase': 'slot_filling', 'intent': 'fill_destination', 'context': '等待用户提供目的地信息', 'collected_info': '暂无信息'}
+2025-06-27 19:15:21,342 - talker.services.chat_service - INFO - === CHAT REQUEST ===
+{
+  "timestamp": "2025-06-27T19:15:21.342047",
+  "type": "request",
+  "chat_type": "ask_destination",
+  "message": "当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息",
+  "kwargs": {
+    "phase": "slot_filling",
+    "intent": "fill_destination",
+    "context": "等待用户提供目的地信息",
+    "collected_info": "暂无信息"
+  }
+}
+2025-06-27 19:15:21,344 - talker.services.chat_service - INFO - === CHAT RESPONSE ===
+{
+  "timestamp": "2025-06-27T19:15:21.342047",
+  "type": "response",
+  "success": true,
+  "content": "嘿，想问问你这次旅行打算去哪里呢？是国内的城市还是国外的景点？给我点信息，我就能帮你规划一个完美的行程啦！",
+  "full_response": {
+    "code": 0,
+    "data": {
+      "sessionId": "036cf838-6e22-4fbb-bf14-ade5272855c1",
+      "requestId": "56c3258a-a15b-4068-8003-c96b71980c54",
+      "content": "嘿，想问问你这次旅行打算去哪里呢？是国内的城市还是国外的景点？给我点信息，我就能帮你规划一个完美的行程啦！",
+      "reasoningContent": null,
+      "image": null,
+      "functionCall": null,
+      "toolCall": null,
+      "toolCalls": null,
+      "contentList": null,
+      "searchInfo": null,
+      "usage": {
+        "promptTokens": null,
+        "completionTokens": null,
+        "totalTokens": null,
+        "duration": null,
+        "imageCost": null,
+        "inputImages": null,
+        "costLevel": null
+      },
+      "provider": "vivo",
+      "clearHistory": null,
+      "searchExtra": null,
+      "model": "vivo-BlueLM-TB-Pro",
+      "finishReason": "STOP",
+      "score": 0.0,
+      "modelInfo": {
+        "model": "",
+        "modelVersion": ""
+      }
+    },
+    "msg": "done."
+  }
+}
+2025-06-27 19:17:02,835 - talker.services.chat_service - INFO - 开始处理聊天请求 - chat_type: ask_destination_again, temperature: 0.7, max_tokens: 2048
+2025-06-27 19:17:02,836 - talker.services.chat_service - DEBUG - === FINAL PROMPT ===
+你是一个专业的旅行助手，正在帮助用户规划旅行。
+
+当前会话信息：
+- 当前阶段：slot_filling
+- 用户意图：fill_destination
+- 上下文：等待用户提供目的地信息
+- 已收集信息：暂无信息
+
+任务：
+如果用户刚刚有主动提问（如介绍某地、玩法、美食、体验等），请先直接用详尽有趣的语言回答用户问题，展现你的专业和热情。答复后，再顺势自然地引导用户补充本次想去的地方。
+刚才没有理解用户的目的地，请用自然、亲切的语气再次引导用户说明想去的地方，如果用户在询问其他问题，请做出详细的回应，并在最后引导用户说明想去的地方。
+要求：
+1. 语气要自然、亲切，不要显得不耐烦
+2. 可以给出一些具体的例子帮助用户理解
+3. 避免过于正式的询问方式
+4. 回复要简洁明了
+5. 如果用户刚才的回答中有其他信息（如日期、预算等），可以适当回应，但还是要询问目的地
+
+输入：当前阶段：slot_filling
+用户意图：fill_destination
+上下文：等待用户提供目的地信息
+已收集信息：暂无信息
+用户刚才的回答：成都附近有什么景点吗
+注意：用户刚才的回答中没有明确的目的地信息，请重新引导用户说明想去的地方。
+
+
+你可以使用的工具如下:
+<APIs>
+[{'name': 'poi_search', 'description': '搜索指定地点的POI信息', 'parameters': {'type': 'object', 'properties': {'location': {'type': 'string', 'description': '搜索地点，例如：北京市海淀区'}, 'keyword': {'type': 'string', 'description': '搜索关键词，例如：餐厅、景点'}, 'radius': {'type': 'integer', 'description': '搜索半径（米），默认1000'}}, 'required': ['location', 'keyword']}}, {'name': 'search_notes', 'description': '搜索小红书笔记', 'parameters': {'type': 'object', 'properties': {'keywords': {'type': 'string', 'description': '搜索关键词'}, 'limit': {'type': 'integer', 'description': '返回结果数量限制，默认5'}}, 'required': ['keywords']}}, {'name': 'get_note_content', 'description': '获取小红书笔记详细内容', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}, {'name': 'get_note_comments', 'description': '获取小红书笔记评论', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}]
+</APIs>
+
+如果用户的问题需要调用工具，输出格式为：
+<APIs>
+[{"name": "函数名","parameters": {"参数名": "参数"}}]
+</APIs>
+否则直接回复用户。
+2025-06-27 19:17:02,850 - talker.services.chat_service - INFO - 使用模板prompt - chat_type: ask_destination_again
+2025-06-27 19:17:02,850 - talker.services.chat_service - DEBUG - 模板数据: {'input': '当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息\n用户刚才的回答：成都附近有什么景点吗\n注意：用户刚才的回答中没有明确的目的地信息，请重新引导用户说明想去的地方。', 'phase': 'slot_filling', 'intent': 'fill_destination', 'context': '等待用户提供目的地信息', 'collected_info': '暂无信息'}
+2025-06-27 19:17:08,041 - talker.services.chat_service - INFO - === CHAT REQUEST ===
+{
+  "timestamp": "2025-06-27T19:17:08.041798",
+  "type": "request",
+  "chat_type": "ask_destination_again",
+  "message": "当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息\n用户刚才的回答：成都附近有什么景点吗\n注意：用户刚才的回答中没有明确的目的地信息，请重新引导用户说明想去的地方。",
+  "kwargs": {
+    "phase": "slot_filling",
+    "intent": "fill_destination",
+    "context": "等待用户提供目的地信息",
+    "collected_info": "暂无信息"
+  }
+}
+2025-06-27 19:17:08,044 - talker.services.chat_service - INFO - === CHAT RESPONSE ===
+{
+  "timestamp": "2025-06-27T19:17:08.041798",
+  "type": "response",
+  "success": true,
+  "content": "哇，你问成都附近有什么景点，真是个好问题！成都周边可是有不少好玩的地方哦。比如说，你可以去都江堰感受古人的智慧，或者去青城山呼吸新鲜空气，还有乐山大佛让你叹为观止。这些都是非常不错的选择呢！\n\n顺便问一下，你这次旅行是打算去成都吗？还是有其他心仪的目的地呢？告诉我吧，我好帮你好好规划一下！",
+  "full_response": {
+    "code": 0,
+    "data": {
+      "sessionId": "036cf838-6e22-4fbb-bf14-ade5272855c1",
+      "requestId": "848e76f1-c9e0-497c-85be-1ba0f0db75a4",
+      "content": "哇，你问成都附近有什么景点，真是个好问题！成都周边可是有不少好玩的地方哦。比如说，你可以去都江堰感受古人的智慧，或者去青城山呼吸新鲜空气，还有乐山大佛让你叹为观止。这些都是非常不错的选择呢！\n\n顺便问一下，你这次旅行是打算去成都吗？还是有其他心仪的目的地呢？告诉我吧，我好帮你好好规划一下！",
+      "reasoningContent": null,
+      "image": null,
+      "functionCall": null,
+      "toolCall": null,
+      "toolCalls": null,
+      "contentList": null,
+      "searchInfo": null,
+      "usage": {
+        "promptTokens": null,
+        "completionTokens": null,
+        "totalTokens": null,
+        "duration": null,
+        "imageCost": null,
+        "inputImages": null,
+        "costLevel": null
+      },
+      "provider": "vivo",
+      "clearHistory": null,
+      "searchExtra": null,
+      "model": "vivo-BlueLM-TB-Pro",
+      "finishReason": "STOP",
+      "score": 0.0,
+      "modelInfo": {
+        "model": "",
+        "modelVersion": ""
+      }
+    },
+    "msg": "done."
+  }
+}
+2025-06-27 19:17:31,244 - talker.services.chat_service - INFO - 开始处理聊天请求 - chat_type: ask_destination_again, temperature: 0.7, max_tokens: 2048
+2025-06-27 19:17:31,245 - talker.services.chat_service - DEBUG - === FINAL PROMPT ===
+你是一个专业的旅行助手，正在帮助用户规划旅行。
+
+当前会话信息：
+- 当前阶段：slot_filling
+- 用户意图：fill_destination
+- 上下文：等待用户提供目的地信息
+- 已收集信息：暂无信息
+
+任务：
+如果用户刚刚有主动提问（如介绍某地、玩法、美食、体验等），请先直接用详尽有趣的语言回答用户问题，展现你的专业和热情。答复后，再顺势自然地引导用户补充本次想去的地方。
+刚才没有理解用户的目的地，请用自然、亲切的语气再次引导用户说明想去的地方，如果用户在询问其他问题，请做出详细的回应，并在最后引导用户说明想去的地方。
+要求：
+1. 语气要自然、亲切，不要显得不耐烦
+2. 可以给出一些具体的例子帮助用户理解
+3. 避免过于正式的询问方式
+4. 回复要简洁明了
+5. 如果用户刚才的回答中有其他信息（如日期、预算等），可以适当回应，但还是要询问目的地
+
+输入：当前阶段：slot_filling
+用户意图：fill_destination
+上下文：等待用户提供目的地信息
+已收集信息：暂无信息
+用户刚才的回答：成都最近的肯德基在什么地方
+注意：用户刚才的回答中没有明确的目的地信息，请重新引导用户说明想去的地方。
+
+
+你可以使用的工具如下:
+<APIs>
+[{'name': 'poi_search', 'description': '搜索指定地点的POI信息', 'parameters': {'type': 'object', 'properties': {'location': {'type': 'string', 'description': '搜索地点，例如：北京市海淀区'}, 'keyword': {'type': 'string', 'description': '搜索关键词，例如：餐厅、景点'}, 'radius': {'type': 'integer', 'description': '搜索半径（米），默认1000'}}, 'required': ['location', 'keyword']}}, {'name': 'search_notes', 'description': '搜索小红书笔记', 'parameters': {'type': 'object', 'properties': {'keywords': {'type': 'string', 'description': '搜索关键词'}, 'limit': {'type': 'integer', 'description': '返回结果数量限制，默认5'}}, 'required': ['keywords']}}, {'name': 'get_note_content', 'description': '获取小红书笔记详细内容', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}, {'name': 'get_note_comments', 'description': '获取小红书笔记评论', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}]
+</APIs>
+
+如果用户的问题需要调用工具，输出格式为：
+<APIs>
+[{"name": "函数名","parameters": {"参数名": "参数"}}]
+</APIs>
+否则直接回复用户。
+2025-06-27 19:17:31,248 - talker.services.chat_service - INFO - 使用模板prompt - chat_type: ask_destination_again
+2025-06-27 19:17:31,248 - talker.services.chat_service - DEBUG - 模板数据: {'input': '当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息\n用户刚才的回答：成都最近的肯德基在什么地方\n注意：用户刚才的回答中没有明确的目的地信息，请重新引导用户说明想去的地方。', 'phase': 'slot_filling', 'intent': 'fill_destination', 'context': '等待用户提供目的地信息', 'collected_info': '暂无信息'}
+2025-06-27 19:17:34,284 - talker.services.chat_service - INFO - === CHAT REQUEST ===
+{
+  "timestamp": "2025-06-27T19:17:34.284398",
+  "type": "request",
+  "chat_type": "ask_destination_again",
+  "message": "当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息\n用户刚才的回答：成都最近的肯德基在什么地方\n注意：用户刚才的回答中没有明确的目的地信息，请重新引导用户说明想去的地方。",
+  "kwargs": {
+    "phase": "slot_filling",
+    "intent": "fill_destination",
+    "context": "等待用户提供目的地信息",
+    "collected_info": "暂无信息"
+  }
+}
+2025-06-27 19:17:34,287 - talker.services.chat_service - INFO - === CHAT RESPONSE ===
+{
+  "timestamp": "2025-06-27T19:17:34.284398",
+  "type": "response",
+  "success": true,
+  "content": "嘿，你刚才问的是成都最近的肯德基位置对吧？让我帮你查一查。不过在帮你查找之前，我还需要知道你这次旅行的具体目的地是哪里呢？这样我能更好地帮你规划行程！你是打算去成都，还是其他城市呢？告诉我吧！",
+  "full_response": {
+    "code": 0,
+    "data": {
+      "sessionId": "036cf838-6e22-4fbb-bf14-ade5272855c1",
+      "requestId": "4c701d91-82b7-4769-8b8f-ad06774ab066",
+      "content": "嘿，你刚才问的是成都最近的肯德基位置对吧？让我帮你查一查。不过在帮你查找之前，我还需要知道你这次旅行的具体目的地是哪里呢？这样我能更好地帮你规划行程！你是打算去成都，还是其他城市呢？告诉我吧！",
+      "reasoningContent": null,
+      "image": null,
+      "functionCall": null,
+      "toolCall": null,
+      "toolCalls": null,
+      "contentList": null,
+      "searchInfo": null,
+      "usage": {
+        "promptTokens": null,
+        "completionTokens": null,
+        "totalTokens": null,
+        "duration": null,
+        "imageCost": null,
+        "inputImages": null,
+        "costLevel": null
+      },
+      "provider": "vivo",
+      "clearHistory": null,
+      "searchExtra": null,
+      "model": "vivo-BlueLM-TB-Pro",
+      "finishReason": "STOP",
+      "score": 0.0,
+      "modelInfo": {
+        "model": "",
+        "modelVersion": ""
+      }
+    },
+    "msg": "done."
+  }
+}
+2025-06-27 19:21:47,065 - talker.services.chat_service - INFO - 开始处理聊天请求 - chat_type: ask_destination, temperature: 0.7, max_tokens: 2048
+2025-06-27 19:21:47,066 - talker.services.chat_service - DEBUG - === FINAL PROMPT ===
+你是一个专业的旅行助手，正在帮助用户规划旅行。
+
+当前会话信息：
+- 当前阶段：slot_filling
+- 用户意图：fill_destination
+- 上下文：等待用户提供目的地信息
+- 已收集信息：暂无信息
+
+任务：
+如果用户主动提问（如介绍某地、玩法、美食、体验等），请先直接用详尽有趣的语言回答用户问题，展现你的专业和热情。答复后，再顺势自然地引导用户补充本次出行的关键信息（如目的地、预算、时间、同行等）。
+用自然、亲切的语气询问用户本次想去哪个城市或景区，避免机械式表达。
+要求：
+1. 语气要自然、亲切，像朋友间的对话
+2. 避免过于正式的询问方式
+3. 可以适当引导用户，比如提到一些热门目的地作为参考
+4. 回复要简洁明了，不要过于冗长
+
+输入：当前阶段：slot_filling
+用户意图：fill_destination
+上下文：等待用户提供目的地信息
+已收集信息：暂无信息
+
+
+你可以使用的工具如下:
+<APIs>
+[{'name': 'poi_search', 'description': '搜索指定地点的POI信息', 'parameters': {'type': 'object', 'properties': {'location': {'type': 'string', 'description': '搜索地点，例如：北京市海淀区'}, 'keyword': {'type': 'string', 'description': '搜索关键词，例如：餐厅、景点'}, 'radius': {'type': 'integer', 'description': '搜索半径（米），默认1000'}}, 'required': ['location', 'keyword']}}, {'name': 'search_notes', 'description': '搜索小红书笔记', 'parameters': {'type': 'object', 'properties': {'keywords': {'type': 'string', 'description': '搜索关键词'}, 'limit': {'type': 'integer', 'description': '返回结果数量限制，默认5'}}, 'required': ['keywords']}}, {'name': 'get_note_content', 'description': '获取小红书笔记详细内容', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}, {'name': 'get_note_comments', 'description': '获取小红书笔记评论', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}]
+</APIs>
+
+如果用户的问题需要调用工具，输出格式为：
+<APIs>
+[{"name": "函数名","parameters": {"参数名": "参数"}}]
+</APIs>
+否则直接回复用户。
+2025-06-27 19:21:47,069 - talker.services.chat_service - INFO - 使用模板prompt - chat_type: ask_destination
+2025-06-27 19:21:47,070 - talker.services.chat_service - DEBUG - 模板数据: {'input': '当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息', 'phase': 'slot_filling', 'intent': 'fill_destination', 'context': '等待用户提供目的地信息', 'collected_info': '暂无信息'}
+2025-06-27 19:21:50,341 - talker.services.chat_service - INFO - === CHAT REQUEST ===
+{
+  "timestamp": "2025-06-27T19:21:50.341991",
+  "type": "request",
+  "chat_type": "ask_destination",
+  "message": "当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息",
+  "kwargs": {
+    "phase": "slot_filling",
+    "intent": "fill_destination",
+    "context": "等待用户提供目的地信息",
+    "collected_info": "暂无信息"
+  }
+}
+2025-06-27 19:21:50,346 - talker.services.chat_service - INFO - === CHAT RESPONSE ===
+{
+  "timestamp": "2025-06-27T19:21:50.341991",
+  "type": "response",
+  "success": true,
+  "content": "嘿，想问问你这次旅行想去哪个城市或者景区呢？这样我可以帮你规划得更详细一些！是打算去看看风景名胜，还是体验一下城市的繁华呢？",
+  "full_response": {
+    "code": 0,
+    "data": {
+      "sessionId": "cfee161f-3ccb-4a29-aec5-029e3d2b4ca8",
+      "requestId": "cc73603b-0711-49e1-ba70-2032fe411b28",
+      "content": "嘿，想问问你这次旅行想去哪个城市或者景区呢？这样我可以帮你规划得更详细一些！是打算去看看风景名胜，还是体验一下城市的繁华呢？",
+      "reasoningContent": null,
+      "image": null,
+      "functionCall": null,
+      "toolCall": null,
+      "toolCalls": null,
+      "contentList": null,
+      "searchInfo": null,
+      "usage": {
+        "promptTokens": null,
+        "completionTokens": null,
+        "totalTokens": null,
+        "duration": null,
+        "imageCost": null,
+        "inputImages": null,
+        "costLevel": null
+      },
+      "provider": "vivo",
+      "clearHistory": null,
+      "searchExtra": null,
+      "model": "vivo-BlueLM-TB-Pro",
+      "finishReason": "STOP",
+      "score": 0.0,
+      "modelInfo": {
+        "model": "",
+        "modelVersion": ""
+      }
+    },
+    "msg": "done."
+  }
+}
+2025-06-27 19:22:06,036 - talker.services.chat_service - INFO - 开始处理聊天请求 - chat_type: ask_destination_again, temperature: 0.7, max_tokens: 2048
+2025-06-27 19:22:06,037 - talker.services.chat_service - DEBUG - === FINAL PROMPT ===
+你是一个专业的旅行助手，正在帮助用户规划旅行。
+
+当前会话信息：
+- 当前阶段：slot_filling
+- 用户意图：fill_destination
+- 上下文：等待用户提供目的地信息
+- 已收集信息：暂无信息
+
+任务：
+如果用户刚刚有主动提问（如介绍某地、玩法、美食、体验等），请先直接用详尽有趣的语言回答用户问题，展现你的专业和热情。答复后，再顺势自然地引导用户补充本次想去的地方。
+刚才没有理解用户的目的地，请用自然、亲切的语气再次引导用户说明想去的地方，如果用户在询问其他问题，请做出详细的回应，并在最后引导用户说明想去的地方。
+要求：
+1. 语气要自然、亲切，不要显得不耐烦
+2. 可以给出一些具体的例子帮助用户理解
+3. 避免过于正式的询问方式
+4. 回复要简洁明了
+5. 如果用户刚才的回答中有其他信息（如日期、预算等），可以适当回应，但还是要询问目的地
+
+输入：当前阶段：slot_filling
+用户意图：fill_destination
+上下文：等待用户提供目的地信息
+已收集信息：暂无信息
+用户刚才的回答：成都青羊区有哪些火锅店
+
+
+
+你可以使用的工具如下:
+<APIs>
+[{'name': 'poi_search', 'description': '搜索指定地点的POI信息', 'parameters': {'type': 'object', 'properties': {'location': {'type': 'string', 'description': '搜索地点，例如：北京市海淀区'}, 'keyword': {'type': 'string', 'description': '搜索关键词，例如：餐厅、景点'}, 'radius': {'type': 'integer', 'description': '搜索半径（米），默认1000'}}, 'required': ['location', 'keyword']}}, {'name': 'search_notes', 'description': '搜索小红书笔记', 'parameters': {'type': 'object', 'properties': {'keywords': {'type': 'string', 'description': '搜索关键词'}, 'limit': {'type': 'integer', 'description': '返回结果数量限制，默认5'}}, 'required': ['keywords']}}, {'name': 'get_note_content', 'description': '获取小红书笔记详细内容', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}, {'name': 'get_note_comments', 'description': '获取小红书笔记评论', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}]
+</APIs>
+
+如果用户的问题需要调用工具，输出格式为：
+<APIs>
+[{"name": "函数名","parameters": {"参数名": "参数"}}]
+</APIs>
+否则直接回复用户。
+2025-06-27 19:22:06,040 - talker.services.chat_service - INFO - 使用模板prompt - chat_type: ask_destination_again
+2025-06-27 19:22:06,040 - talker.services.chat_service - DEBUG - 模板数据: {'input': '当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息\n用户刚才的回答：成都青羊区有哪些火锅店\n', 'phase': 'slot_filling', 'intent': 'fill_destination', 'context': '等待用户提供目的地信息', 'collected_info': '暂无信息'}
+2025-06-27 19:22:11,109 - talker.services.chat_service - INFO - === CHAT REQUEST ===
+{
+  "timestamp": "2025-06-27T19:22:11.109170",
+  "type": "request",
+  "chat_type": "ask_destination_again",
+  "message": "当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息\n用户刚才的回答：成都青羊区有哪些火锅店\n",
+  "kwargs": {
+    "phase": "slot_filling",
+    "intent": "fill_destination",
+    "context": "等待用户提供目的地信息",
+    "collected_info": "暂无信息"
+  }
+}
+2025-06-27 19:22:11,111 - talker.services.chat_service - INFO - === CHAT RESPONSE ===
+{
+  "timestamp": "2025-06-27T19:22:11.109170",
+  "type": "response",
+  "success": true,
+  "content": "火锅是成都的美食代表之一，青羊区作为成都的中心区域，当然有很多火锅店值得一试！比如像“蜀九香”、“大妙火锅”这些当地人也非常推崇的店铺。不过，如果你有特定的口味或环境要求，可以告诉我，我可以帮你更精准地挑选哦。顺便问一下，除了火锅之外，你还想去青羊区的其他哪些地方吗？比如宽窄巷子、青羊宫等著名景点？",
+  "full_response": {
+    "code": 0,
+    "data": {
+      "sessionId": "cfee161f-3ccb-4a29-aec5-029e3d2b4ca8",
+      "requestId": "5a4e8e3e-1393-4a2a-8bb6-1e16c8056e64",
+      "content": "火锅是成都的美食代表之一，青羊区作为成都的中心区域，当然有很多火锅店值得一试！比如像“蜀九香”、“大妙火锅”这些当地人也非常推崇的店铺。不过，如果你有特定的口味或环境要求，可以告诉我，我可以帮你更精准地挑选哦。顺便问一下，除了火锅之外，你还想去青羊区的其他哪些地方吗？比如宽窄巷子、青羊宫等著名景点？",
+      "reasoningContent": null,
+      "image": null,
+      "functionCall": null,
+      "toolCall": null,
+      "toolCalls": null,
+      "contentList": null,
+      "searchInfo": null,
+      "usage": {
+        "promptTokens": null,
+        "completionTokens": null,
+        "totalTokens": null,
+        "duration": null,
+        "imageCost": null,
+        "inputImages": null,
+        "costLevel": null
+      },
+      "provider": "vivo",
+      "clearHistory": null,
+      "searchExtra": null,
+      "model": "vivo-BlueLM-TB-Pro",
+      "finishReason": "STOP",
+      "score": 0.0,
+      "modelInfo": {
+        "model": "",
+        "modelVersion": ""
+      }
+    },
+    "msg": "done."
+  }
+}
+2025-06-27 19:25:26,402 - talker.services.chat_service - INFO - 开始处理聊天请求 - chat_type: ask_destination_again, temperature: 0.7, max_tokens: 2048
+2025-06-27 19:25:26,402 - talker.services.chat_service - DEBUG - === FINAL PROMPT ===
+你是一个专业的旅行助手，正在帮助用户规划旅行。
+
+当前会话信息：
+- 当前阶段：slot_filling
+- 用户意图：fill_destination
+- 上下文：等待用户提供目的地信息
+- 已收集信息：暂无信息
+
+任务：
+如果用户刚刚有主动提问（如介绍某地、玩法、美食、体验等），请先直接用详尽有趣的语言回答用户问题，展现你的专业和热情。答复后，再顺势自然地引导用户补充本次想去的地方。
+刚才没有理解用户的目的地，请用自然、亲切的语气再次引导用户说明想去的地方，如果用户在询问其他问题，请做出详细的回应，并在最后引导用户说明想去的地方。
+要求：
+1. 语气要自然、亲切，不要显得不耐烦
+2. 可以给出一些具体的例子帮助用户理解
+3. 避免过于正式的询问方式
+4. 回复要简洁明了
+5. 如果用户刚才的回答中有其他信息（如日期、预算等），可以适当回应，但还是要询问目的地
+
+输入：当前阶段：slot_filling
+用户意图：fill_destination
+上下文：等待用户提供目的地信息
+已收集信息：暂无信息
+用户刚才的回答：为我搜索成都青羊区的火锅店有几家
+
+
+
+你可以使用的工具如下:
+<APIs>
+[{'name': 'poi_search', 'description': '搜索指定地点的POI信息', 'parameters': {'type': 'object', 'properties': {'location': {'type': 'string', 'description': '搜索地点，例如：北京市海淀区'}, 'keyword': {'type': 'string', 'description': '搜索关键词，例如：餐厅、景点'}, 'radius': {'type': 'integer', 'description': '搜索半径（米），默认1000'}}, 'required': ['location', 'keyword']}}, {'name': 'search_notes', 'description': '搜索小红书笔记', 'parameters': {'type': 'object', 'properties': {'keywords': {'type': 'string', 'description': '搜索关键词'}, 'limit': {'type': 'integer', 'description': '返回结果数量限制，默认5'}}, 'required': ['keywords']}}, {'name': 'get_note_content', 'description': '获取小红书笔记详细内容', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}, {'name': 'get_note_comments', 'description': '获取小红书笔记评论', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}]
+</APIs>
+
+如果用户的问题需要调用工具，输出格式为：
+<APIs>
+[{"name": "函数名","parameters": {"参数名": "参数"}}]
+</APIs>
+否则直接回复用户。
+2025-06-27 19:25:26,406 - talker.services.chat_service - INFO - 使用模板prompt - chat_type: ask_destination_again
+2025-06-27 19:25:26,407 - talker.services.chat_service - DEBUG - 模板数据: {'input': '当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息\n用户刚才的回答：为我搜索成都青羊区的火锅店有几家\n', 'phase': 'slot_filling', 'intent': 'fill_destination', 'context': '等待用户提供目的地信息', 'collected_info': '暂无信息'}
+2025-06-27 19:25:31,180 - talker.services.chat_service - INFO - === CHAT REQUEST ===
+{
+  "timestamp": "2025-06-27T19:25:31.180426",
+  "type": "request",
+  "chat_type": "ask_destination_again",
+  "message": "当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息\n用户刚才的回答：为我搜索成都青羊区的火锅店有几家\n",
+  "kwargs": {
+    "phase": "slot_filling",
+    "intent": "fill_destination",
+    "context": "等待用户提供目的地信息",
+    "collected_info": "暂无信息"
+  }
+}
+2025-06-27 19:25:31,182 - talker.services.chat_service - INFO - === CHAT RESPONSE ===
+{
+  "timestamp": "2025-06-27T19:25:31.180426",
+  "type": "response",
+  "success": true,
+  "content": "提到成都青羊区的火锅店，有几家特别值得推荐：\n\n1. **蜀九香**：以其独特的麻辣口味和丰富的菜品选择著称。\n2. **大妙火锅**：环境优雅，菜品新鲜，是体验成都火锅文化的好去处。\n\n顺便问一下，你打算什么时候去成都呢？这样我可以帮你看看有没有什么特别的活动或者优惠信息。",
+  "full_response": {
+    "code": 0,
+    "data": {
+      "sessionId": "cfee161f-3ccb-4a29-aec5-029e3d2b4ca8",
+      "requestId": "68774ca0-befd-4e6c-8f04-b4b895859374",
+      "content": "提到成都青羊区的火锅店，有几家特别值得推荐：\n\n1. **蜀九香**：以其独特的麻辣口味和丰富的菜品选择著称。\n2. **大妙火锅**：环境优雅，菜品新鲜，是体验成都火锅文化的好去处。\n\n顺便问一下，你打算什么时候去成都呢？这样我可以帮你看看有没有什么特别的活动或者优惠信息。",
+      "reasoningContent": null,
+      "image": null,
+      "functionCall": null,
+      "toolCall": null,
+      "toolCalls": null,
+      "contentList": null,
+      "searchInfo": null,
+      "usage": {
+        "promptTokens": null,
+        "completionTokens": null,
+        "totalTokens": null,
+        "duration": null,
+        "imageCost": null,
+        "inputImages": null,
+        "costLevel": null
+      },
+      "provider": "vivo",
+      "clearHistory": null,
+      "searchExtra": null,
+      "model": "vivo-BlueLM-TB-Pro",
+      "finishReason": "STOP",
+      "score": 0.0,
+      "modelInfo": {
+        "model": "",
+        "modelVersion": ""
+      }
+    },
+    "msg": "done."
+  }
+}
+2025-06-27 19:26:09,906 - talker.services.chat_service - INFO - 开始处理聊天请求 - chat_type: ask_destination_again, temperature: 0.7, max_tokens: 2048
+2025-06-27 19:26:09,907 - talker.services.chat_service - DEBUG - === FINAL PROMPT ===
+你是一个专业的旅行助手，正在帮助用户规划旅行。
+
+当前会话信息：
+- 当前阶段：slot_filling
+- 用户意图：fill_destination
+- 上下文：等待用户提供目的地信息
+- 已收集信息：暂无信息
+
+任务：
+如果用户刚刚有主动提问（如介绍某地、玩法、美食、体验等），请先直接用详尽有趣的语言回答用户问题，展现你的专业和热情。答复后，再顺势自然地引导用户补充本次想去的地方。
+刚才没有理解用户的目的地，请用自然、亲切的语气再次引导用户说明想去的地方，如果用户在询问其他问题，请做出详细的回应，并在最后引导用户说明想去的地方。
+要求：
+1. 语气要自然、亲切，不要显得不耐烦
+2. 可以给出一些具体的例子帮助用户理解
+3. 避免过于正式的询问方式
+4. 回复要简洁明了
+5. 如果用户刚才的回答中有其他信息（如日期、预算等），可以适当回应，但还是要询问目的地
+
+输入：当前阶段：slot_filling
+用户意图：fill_destination
+上下文：等待用户提供目的地信息
+已收集信息：暂无信息
+用户刚才的回答：你不会function call吗？
+
+
+
+你可以使用的工具如下:
+<APIs>
+[{'name': 'poi_search', 'description': '搜索指定地点的POI信息', 'parameters': {'type': 'object', 'properties': {'location': {'type': 'string', 'description': '搜索地点，例如：北京市海淀区'}, 'keyword': {'type': 'string', 'description': '搜索关键词，例如：餐厅、景点'}, 'radius': {'type': 'integer', 'description': '搜索半径（米），默认1000'}}, 'required': ['location', 'keyword']}}, {'name': 'search_notes', 'description': '搜索小红书笔记', 'parameters': {'type': 'object', 'properties': {'keywords': {'type': 'string', 'description': '搜索关键词'}, 'limit': {'type': 'integer', 'description': '返回结果数量限制，默认5'}}, 'required': ['keywords']}}, {'name': 'get_note_content', 'description': '获取小红书笔记详细内容', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}, {'name': 'get_note_comments', 'description': '获取小红书笔记评论', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}]
+</APIs>
+
+如果用户的问题需要调用工具，输出格式为：
+<APIs>
+[{"name": "函数名","parameters": {"参数名": "参数"}}]
+</APIs>
+否则直接回复用户。
+2025-06-27 19:26:09,910 - talker.services.chat_service - INFO - 使用模板prompt - chat_type: ask_destination_again
+2025-06-27 19:26:09,910 - talker.services.chat_service - DEBUG - 模板数据: {'input': '当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息\n用户刚才的回答：你不会function call吗？\n', 'phase': 'slot_filling', 'intent': 'fill_destination', 'context': '等待用户提供目的地信息', 'collected_info': '暂无信息'}
+2025-06-27 19:26:13,895 - talker.services.chat_service - INFO - === CHAT REQUEST ===
+{
+  "timestamp": "2025-06-27T19:26:13.895389",
+  "type": "request",
+  "chat_type": "ask_destination_again",
+  "message": "当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息\n用户刚才的回答：你不会function call吗？\n",
+  "kwargs": {
+    "phase": "slot_filling",
+    "intent": "fill_destination",
+    "context": "等待用户提供目的地信息",
+    "collected_info": "暂无信息"
+  }
+}
+2025-06-27 19:26:13,898 - talker.services.chat_service - INFO - === CHAT RESPONSE ===
+{
+  "timestamp": "2025-06-27T19:26:13.895389",
+  "type": "response",
+  "success": true,
+  "content": "看来你可能在询问一些具体的功能或服务。不过，我主要是帮你规划旅行的。告诉我，你最近有想去哪里旅行吗？无论是国内还是国外，我都乐意帮你规划一段难忘的旅程！",
+  "full_response": {
+    "code": 0,
+    "data": {
+      "sessionId": "cfee161f-3ccb-4a29-aec5-029e3d2b4ca8",
+      "requestId": "b38b54a4-b50f-481c-8864-d914e9694442",
+      "content": "看来你可能在询问一些具体的功能或服务。不过，我主要是帮你规划旅行的。告诉我，你最近有想去哪里旅行吗？无论是国内还是国外，我都乐意帮你规划一段难忘的旅程！",
+      "reasoningContent": null,
+      "image": null,
+      "functionCall": null,
+      "toolCall": null,
+      "toolCalls": null,
+      "contentList": null,
+      "searchInfo": null,
+      "usage": {
+        "promptTokens": null,
+        "completionTokens": null,
+        "totalTokens": null,
+        "duration": null,
+        "imageCost": null,
+        "inputImages": null,
+        "costLevel": null
+      },
+      "provider": "vivo",
+      "clearHistory": null,
+      "searchExtra": null,
+      "model": "vivo-BlueLM-TB-Pro",
+      "finishReason": "STOP",
+      "score": 0.0,
+      "modelInfo": {
+        "model": "",
+        "modelVersion": ""
+      }
+    },
+    "msg": "done."
+  }
+}
+2025-06-27 19:32:31,905 - talker.services.chat_service - INFO - 开始处理聊天请求 - chat_type: ask_destination, temperature: 0.7, max_tokens: 2048
+2025-06-27 19:32:31,906 - talker.services.chat_service - DEBUG - === FINAL PROMPT ===
+你是一个专业的旅行助手，正在帮助用户规划旅行。
+
+当前会话信息：
+- 当前阶段：slot_filling
+- 用户意图：fill_destination
+- 上下文：等待用户提供目的地信息
+- 已收集信息：暂无信息
+
+任务：
+如果用户主动提问（如介绍某地、玩法、美食、体验等），请先直接用详尽有趣的语言回答用户问题，展现你的专业和热情。答复后，再顺势自然地引导用户补充本次出行的关键信息（如目的地、预算、时间、同行等）。
+用自然、亲切的语气询问用户本次想去哪个城市或景区，避免机械式表达。
+要求：
+1. 语气要自然、亲切，像朋友间的对话
+2. 避免过于正式的询问方式
+3. 可以适当引导用户，比如提到一些热门目的地作为参考
+4. 回复要简洁明了，不要过于冗长
+
+输入：当前阶段：slot_filling
+用户意图：fill_destination
+上下文：等待用户提供目的地信息
+已收集信息：暂无信息
+
+
+你可以使用的工具如下:
+<APIs>
+[{'name': 'poi_search', 'description': '搜索指定地点的POI信息', 'parameters': {'type': 'object', 'properties': {'location': {'type': 'string', 'description': '搜索地点，例如：北京市海淀区'}, 'keyword': {'type': 'string', 'description': '搜索关键词，例如：餐厅、景点'}, 'radius': {'type': 'integer', 'description': '搜索半径（米），默认1000'}}, 'required': ['location', 'keyword']}}, {'name': 'search_notes', 'description': '搜索小红书笔记', 'parameters': {'type': 'object', 'properties': {'keywords': {'type': 'string', 'description': '搜索关键词'}, 'limit': {'type': 'integer', 'description': '返回结果数量限制，默认5'}}, 'required': ['keywords']}}, {'name': 'get_note_content', 'description': '获取小红书笔记详细内容', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}, {'name': 'get_note_comments', 'description': '获取小红书笔记评论', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}]
+</APIs>
+
+你必须根据用户的问题需要判断是否调用工具。如果调用能提供用户想要的内容，请务必调用对应的 API，输出格式为：
+<APIs>
+[{"name": "函数名","parameters": {"参数名": "参数"}}]
+</APIs>
+否则直接回复用户。
+2025-06-27 19:32:31,908 - talker.services.chat_service - INFO - 使用模板prompt - chat_type: ask_destination
+2025-06-27 19:32:31,909 - talker.services.chat_service - DEBUG - 模板数据: {'input': '当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息', 'phase': 'slot_filling', 'intent': 'fill_destination', 'context': '等待用户提供目的地信息', 'collected_info': '暂无信息'}
+2025-06-27 19:32:34,374 - talker.services.chat_service - INFO - === CHAT REQUEST ===
+{
+  "timestamp": "2025-06-27T19:32:34.374459",
+  "type": "request",
+  "chat_type": "ask_destination",
+  "message": "当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息",
+  "kwargs": {
+    "phase": "slot_filling",
+    "intent": "fill_destination",
+    "context": "等待用户提供目的地信息",
+    "collected_info": "暂无信息"
+  }
+}
+2025-06-27 19:32:34,376 - talker.services.chat_service - INFO - === CHAT RESPONSE ===
+{
+  "timestamp": "2025-06-27T19:32:34.374459",
+  "type": "response",
+  "success": true,
+  "content": "你好呀！想问问你这次旅行想去哪个有趣的地方呢？是想要探索繁华的城市，还是走进大自然的怀抱呢？告诉我你的目的地，我可以帮你规划一次难忘的旅程！",
+  "full_response": {
+    "code": 0,
+    "data": {
+      "sessionId": "7c50abae-2f47-425d-84d9-0f7934c4ac4b",
+      "requestId": "05348195-acb0-4b65-b524-4a9873664a7f",
+      "content": "你好呀！想问问你这次旅行想去哪个有趣的地方呢？是想要探索繁华的城市，还是走进大自然的怀抱呢？告诉我你的目的地，我可以帮你规划一次难忘的旅程！",
+      "reasoningContent": null,
+      "image": null,
+      "functionCall": null,
+      "toolCall": null,
+      "toolCalls": null,
+      "contentList": null,
+      "searchInfo": null,
+      "usage": {
+        "promptTokens": null,
+        "completionTokens": null,
+        "totalTokens": null,
+        "duration": null,
+        "imageCost": null,
+        "inputImages": null,
+        "costLevel": null
+      },
+      "provider": "vivo",
+      "clearHistory": null,
+      "searchExtra": null,
+      "model": "vivo-BlueLM-TB-Pro",
+      "finishReason": "STOP",
+      "score": 0.0,
+      "modelInfo": {
+        "model": "",
+        "modelVersion": ""
+      }
+    },
+    "msg": "done."
+  }
+}
+2025-06-27 19:32:46,441 - talker.services.chat_service - INFO - 开始处理聊天请求 - chat_type: ask_destination_again, temperature: 0.7, max_tokens: 2048
+2025-06-27 19:32:46,442 - talker.services.chat_service - DEBUG - === FINAL PROMPT ===
+你是一个专业的旅行助手，正在帮助用户规划旅行。
+
+当前会话信息：
+- 当前阶段：slot_filling
+- 用户意图：fill_destination
+- 上下文：等待用户提供目的地信息
+- 已收集信息：暂无信息
+
+任务：
+如果用户刚刚有主动提问（如介绍某地、玩法、美食、体验等），请先直接用详尽有趣的语言回答用户问题，展现你的专业和热情。答复后，再顺势自然地引导用户补充本次想去的地方。
+刚才没有理解用户的目的地，请用自然、亲切的语气再次引导用户说明想去的地方，如果用户在询问其他问题，请做出详细的回应，并在最后引导用户说明想去的地方。
+要求：
+1. 语气要自然、亲切，不要显得不耐烦
+2. 可以给出一些具体的例子帮助用户理解
+3. 避免过于正式的询问方式
+4. 回复要简洁明了
+5. 如果用户刚才的回答中有其他信息（如日期、预算等），可以适当回应，但还是要询问目的地
+
+输入：当前阶段：slot_filling
+用户意图：fill_destination
+上下文：等待用户提供目的地信息
+已收集信息：暂无信息
+用户刚才的回答：成都青羊区有哪些火锅店
+
+
+
+你可以使用的工具如下:
+<APIs>
+[{'name': 'poi_search', 'description': '搜索指定地点的POI信息', 'parameters': {'type': 'object', 'properties': {'location': {'type': 'string', 'description': '搜索地点，例如：北京市海淀区'}, 'keyword': {'type': 'string', 'description': '搜索关键词，例如：餐厅、景点'}, 'radius': {'type': 'integer', 'description': '搜索半径（米），默认1000'}}, 'required': ['location', 'keyword']}}, {'name': 'search_notes', 'description': '搜索小红书笔记', 'parameters': {'type': 'object', 'properties': {'keywords': {'type': 'string', 'description': '搜索关键词'}, 'limit': {'type': 'integer', 'description': '返回结果数量限制，默认5'}}, 'required': ['keywords']}}, {'name': 'get_note_content', 'description': '获取小红书笔记详细内容', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}, {'name': 'get_note_comments', 'description': '获取小红书笔记评论', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}]
+</APIs>
+
+你必须根据用户的问题需要判断是否调用工具。如果调用能提供用户想要的内容，请务必调用对应的 API，输出格式为：
+<APIs>
+[{"name": "函数名","parameters": {"参数名": "参数"}}]
+</APIs>
+否则直接回复用户。
+2025-06-27 19:32:46,445 - talker.services.chat_service - INFO - 使用模板prompt - chat_type: ask_destination_again
+2025-06-27 19:32:46,445 - talker.services.chat_service - DEBUG - 模板数据: {'input': '当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息\n用户刚才的回答：成都青羊区有哪些火锅店\n', 'phase': 'slot_filling', 'intent': 'fill_destination', 'context': '等待用户提供目的地信息', 'collected_info': '暂无信息'}
+2025-06-27 19:32:53,420 - talker.services.chat_service - INFO - === CHAT REQUEST ===
+{
+  "timestamp": "2025-06-27T19:32:53.420224",
+  "type": "request",
+  "chat_type": "ask_destination_again",
+  "message": "当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息\n用户刚才的回答：成都青羊区有哪些火锅店\n",
+  "kwargs": {
+    "phase": "slot_filling",
+    "intent": "fill_destination",
+    "context": "等待用户提供目的地信息",
+    "collected_info": "暂无信息"
+  }
+}
+2025-06-27 19:32:53,425 - talker.services.chat_service - INFO - === CHAT RESPONSE ===
+{
+  "timestamp": "2025-06-27T19:32:53.420224",
+  "type": "response",
+  "success": true,
+  "content": "你好呀！刚才你提到了成都青羊区的火锅店，那里有很多不错的选择哦！不过，我还需要了解一下你具体的旅行目的地是哪里呢？是成都青羊区吗？这样我才能帮你规划得更详细一些！期待你的回复哦！",
+  "full_response": {
+    "code": 0,
+    "data": {
+      "sessionId": "7c50abae-2f47-425d-84d9-0f7934c4ac4b",
+      "requestId": "0169a6cd-d5aa-499b-ad08-a4c467a2fe79",
+      "content": "你好呀！刚才你提到了成都青羊区的火锅店，那里有很多不错的选择哦！不过，我还需要了解一下你具体的旅行目的地是哪里呢？是成都青羊区吗？这样我才能帮你规划得更详细一些！期待你的回复哦！",
+      "reasoningContent": null,
+      "image": null,
+      "functionCall": null,
+      "toolCall": null,
+      "toolCalls": null,
+      "contentList": null,
+      "searchInfo": null,
+      "usage": {
+        "promptTokens": null,
+        "completionTokens": null,
+        "totalTokens": null,
+        "duration": null,
+        "imageCost": null,
+        "inputImages": null,
+        "costLevel": null
+      },
+      "provider": "vivo",
+      "clearHistory": null,
+      "searchExtra": null,
+      "model": "vivo-BlueLM-TB-Pro",
+      "finishReason": "STOP",
+      "score": 0.0,
+      "modelInfo": {
+        "model": "",
+        "modelVersion": ""
+      }
+    },
+    "msg": "done."
+  }
+}
+2025-06-27 19:33:49,972 - talker.services.chat_service - INFO - 开始处理聊天请求 - chat_type: ask_destination, temperature: 0.7, max_tokens: 2048
+2025-06-27 19:33:49,973 - talker.services.chat_service - DEBUG - === FINAL PROMPT ===
+你是一个专业的旅行助手，正在帮助用户规划旅行。
+
+当前会话信息：
+- 当前阶段：slot_filling
+- 用户意图：fill_destination
+- 上下文：等待用户提供目的地信息
+- 已收集信息：暂无信息
+
+任务：
+如果用户主动提问（如介绍某地、玩法、美食、体验等），请先直接用详尽有趣的语言回答用户问题，展现你的专业和热情。答复后，再顺势自然地引导用户补充本次出行的关键信息（如目的地、预算、时间、同行等）。
+用自然、亲切的语气询问用户本次想去哪个城市或景区，避免机械式表达。
+要求：
+1. 语气要自然、亲切，像朋友间的对话
+2. 避免过于正式的询问方式
+3. 可以适当引导用户，比如提到一些热门目的地作为参考
+4. 回复要简洁明了，不要过于冗长
+
+输入：当前阶段：slot_filling
+用户意图：fill_destination
+上下文：等待用户提供目的地信息
+已收集信息：暂无信息
+
+
+你可以使用的工具如下:
+<APIs>
+[{'name': 'poi_search', 'description': '搜索指定地点的POI信息', 'parameters': {'type': 'object', 'properties': {'location': {'type': 'string', 'description': '搜索地点，例如：北京市海淀区'}, 'keyword': {'type': 'string', 'description': '搜索关键词，例如：餐厅、景点'}, 'radius': {'type': 'integer', 'description': '搜索半径（米），默认1000'}}, 'required': ['location', 'keyword']}}, {'name': 'search_notes', 'description': '搜索小红书笔记', 'parameters': {'type': 'object', 'properties': {'keywords': {'type': 'string', 'description': '搜索关键词'}, 'limit': {'type': 'integer', 'description': '返回结果数量限制，默认5'}}, 'required': ['keywords']}}, {'name': 'get_note_content', 'description': '获取小红书笔记详细内容', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}, {'name': 'get_note_comments', 'description': '获取小红书笔记评论', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}]
+</APIs>
+
+你必须根据用户的问题需要判断是否调用工具。如果调用能提供用户想要的内容，请务必调用对应的 API，输出格式为：
+<APIs>
+[{"name": "函数名","parameters": {"参数名": "参数"}}]
+</APIs>
+否则直接回复用户。
+2025-06-27 19:33:49,978 - talker.services.chat_service - INFO - 使用模板prompt - chat_type: ask_destination
+2025-06-27 19:33:49,978 - talker.services.chat_service - DEBUG - 模板数据: {'input': '当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息', 'phase': 'slot_filling', 'intent': 'fill_destination', 'context': '等待用户提供目的地信息', 'collected_info': '暂无信息'}
+2025-06-27 19:33:52,697 - talker.services.chat_service - INFO - === CHAT REQUEST ===
+{
+  "timestamp": "2025-06-27T19:33:52.697221",
+  "type": "request",
+  "chat_type": "ask_destination",
+  "message": "当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息",
+  "kwargs": {
+    "phase": "slot_filling",
+    "intent": "fill_destination",
+    "context": "等待用户提供目的地信息",
+    "collected_info": "暂无信息"
+  }
+}
+2025-06-27 19:33:52,699 - talker.services.chat_service - INFO - === CHAT RESPONSE ===
+{
+  "timestamp": "2025-06-27T19:33:52.697221",
+  "type": "response",
+  "success": true,
+  "content": "嗨，亲爱的旅行家，开始规划你的下一次冒险了吗？我在这里等着帮你把旅行计划变得完美呢！不过，我还需要一个小提示——就是你想去哪个城市或景区？这样我才能根据你的喜好，给你量身定制旅行建议哦。有没有什么特别的地方在你心中已经种草了呢？告诉我吧！",
+  "full_response": {
+    "code": 0,
+    "data": {
+      "sessionId": "c8ef3434-2323-4fd0-91ea-19d1de1c6225",
+      "requestId": "bf1f2944-287b-464f-8be4-2c4dca9edcf3",
+      "content": "嗨，亲爱的旅行家，开始规划你的下一次冒险了吗？我在这里等着帮你把旅行计划变得完美呢！不过，我还需要一个小提示——就是你想去哪个城市或景区？这样我才能根据你的喜好，给你量身定制旅行建议哦。有没有什么特别的地方在你心中已经种草了呢？告诉我吧！",
+      "reasoningContent": null,
+      "image": null,
+      "functionCall": null,
+      "toolCall": null,
+      "toolCalls": null,
+      "contentList": null,
+      "searchInfo": null,
+      "usage": {
+        "promptTokens": null,
+        "completionTokens": null,
+        "totalTokens": null,
+        "duration": null,
+        "imageCost": null,
+        "inputImages": null,
+        "costLevel": null
+      },
+      "provider": "vivo",
+      "clearHistory": null,
+      "searchExtra": null,
+      "model": "vivo-BlueLM-TB-Pro",
+      "finishReason": "STOP",
+      "score": 0.0,
+      "modelInfo": {
+        "model": "",
+        "modelVersion": ""
+      }
+    },
+    "msg": "done."
+  }
+}
+2025-06-27 19:34:23,451 - talker.services.chat_service - INFO - 开始处理聊天请求 - chat_type: ask_budget, temperature: 0.7, max_tokens: 2048
+2025-06-27 19:34:23,451 - talker.services.chat_service - DEBUG - === FINAL PROMPT ===
+你是一个专业的旅行助手，正在帮助用户规划旅行。
+
+当前会话信息：
+- 当前阶段：slot_filling
+- 用户意图：fill_budget
+- 上下文：等待用户提供预算信息
+- 已收集信息：目的地：成都青羊区
+
+任务：
+如果用户刚刚有主动提问（如介绍某地消费、预算建议、旅行花费等），请先直接用详尽有趣的语言回答用户问题，展现你的专业和热情。答复后，再顺势自然地引导用户补充本次出行的预算信息。
+用自然、亲切的语气询问用户本次出行的预算范围，避免机械式表达。
+要求：
+1. 语气要自然、亲切，像朋友间的对话
+2. 可以根据经验给出一些预算范围的参考，具体数字需要你根据用户画像和目的地来判断
+3. 避免过于正式的询问方式
+4. 回复要简洁明了
+
+输入：当前阶段：slot_filling
+用户意图：fill_budget
+上下文：等待用户提供预算信息
+已收集信息：目的地：成都青羊区
+
+
+你可以使用的工具如下:
+<APIs>
+[{'name': 'poi_search', 'description': '搜索指定地点的POI信息', 'parameters': {'type': 'object', 'properties': {'location': {'type': 'string', 'description': '搜索地点，例如：北京市海淀区'}, 'keyword': {'type': 'string', 'description': '搜索关键词，例如：餐厅、景点'}, 'radius': {'type': 'integer', 'description': '搜索半径（米），默认1000'}}, 'required': ['location', 'keyword']}}, {'name': 'search_notes', 'description': '搜索小红书笔记', 'parameters': {'type': 'object', 'properties': {'keywords': {'type': 'string', 'description': '搜索关键词'}, 'limit': {'type': 'integer', 'description': '返回结果数量限制，默认5'}}, 'required': ['keywords']}}, {'name': 'get_note_content', 'description': '获取小红书笔记详细内容', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}, {'name': 'get_note_comments', 'description': '获取小红书笔记评论', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}]
+</APIs>
+
+你必须根据用户的问题需要判断是否调用工具。如果调用能提供用户想要的内容，请务必调用对应的 API，输出格式为：
+<APIs>
+[{"name": "函数名","parameters": {"参数名": "参数"}}]
+</APIs>
+否则直接回复用户。
+2025-06-27 19:34:23,454 - talker.services.chat_service - INFO - 使用模板prompt - chat_type: ask_budget
+2025-06-27 19:34:23,454 - talker.services.chat_service - DEBUG - 模板数据: {'input': '当前阶段：slot_filling\n用户意图：fill_budget\n上下文：等待用户提供预算信息\n已收集信息：目的地：成都青羊区', 'phase': 'slot_filling', 'intent': 'fill_budget', 'context': '等待用户提供预算信息', 'collected_info': '目的地：成都青羊区'}
+2025-06-27 19:34:26,380 - talker.services.chat_service - INFO - === CHAT REQUEST ===
+{
+  "timestamp": "2025-06-27T19:34:26.380491",
+  "type": "request",
+  "chat_type": "ask_budget",
+  "message": "当前阶段：slot_filling\n用户意图：fill_budget\n上下文：等待用户提供预算信息\n已收集信息：目的地：成都青羊区",
+  "kwargs": {
+    "phase": "slot_filling",
+    "intent": "fill_budget",
+    "context": "等待用户提供预算信息",
+    "collected_info": "目的地：成都青羊区"
+  }
+}
+2025-06-27 19:34:26,382 - talker.services.chat_service - INFO - === CHAT RESPONSE ===
+{
+  "timestamp": "2025-06-27T19:34:26.380491",
+  "type": "response",
+  "success": true,
+  "content": "嘿，亲爱的朋友，现在来聊聊你的旅行预算吧。根据你的计划，目的地是成都青羊区，那里的美食和景点真是让人心动不已！为了帮你做出最佳的旅行预算，我需要你告诉我大概的预算范围。这样我才能帮你规划出最合适的行程哦。期待你的回复！",
+  "full_response": {
+    "code": 0,
+    "data": {
+      "sessionId": "c8ef3434-2323-4fd0-91ea-19d1de1c6225",
+      "requestId": "d39a81c8-3cee-4c5c-9c2a-8eaa50ea7893",
+      "content": "嘿，亲爱的朋友，现在来聊聊你的旅行预算吧。根据你的计划，目的地是成都青羊区，那里的美食和景点真是让人心动不已！为了帮你做出最佳的旅行预算，我需要你告诉我大概的预算范围。这样我才能帮你规划出最合适的行程哦。期待你的回复！",
+      "reasoningContent": null,
+      "image": null,
+      "functionCall": null,
+      "toolCall": null,
+      "toolCalls": null,
+      "contentList": null,
+      "searchInfo": null,
+      "usage": {
+        "promptTokens": null,
+        "completionTokens": null,
+        "totalTokens": null,
+        "duration": null,
+        "imageCost": null,
+        "inputImages": null,
+        "costLevel": null
+      },
+      "provider": "vivo",
+      "clearHistory": null,
+      "searchExtra": null,
+      "model": "vivo-BlueLM-TB-Pro",
+      "finishReason": "STOP",
+      "score": 0.0,
+      "modelInfo": {
+        "model": "",
+        "modelVersion": ""
+      }
+    },
+    "msg": "done."
+  }
+}
+2025-06-27 19:36:54,658 - talker.services.chat_service - INFO - 开始处理聊天请求 - chat_type: ask_budget_again, temperature: 0.7, max_tokens: 2048
+2025-06-27 19:36:54,659 - talker.services.chat_service - DEBUG - === FINAL PROMPT ===
+你是一个专业的旅行助手，正在帮助用户规划旅行。
+
+当前会话信息：
+- 当前阶段：slot_filling
+- 用户意图：fill_budget
+- 上下文：等待用户提供预算信息
+- 已收集信息：目的地：成都青羊区
+
+任务：
+如果用户刚刚有主动提问（如介绍某地消费、预算建议、旅行花费等），请先直接用详尽有趣的语言回答用户问题，展现你的专业和热情。答复后，再顺势自然地引导用户补充本次出行的预算信息。
+刚才没有理解用户的预算，请用自然、亲切的语气再次引导用户说明预算，如果用户在询问其他问题，请做出详细的回应，并在最后引导用户说明预算。
+要求：
+1. 语气要自然、亲切，不要显得不耐烦
+2. 可以根据经验给出一些预算范围的参考，具体数字需要你根据用户画像和目的地来判断
+3. 避免过于正式的询问方式
+4. 回复要简洁明了
+5. 如果用户刚才的回答中有其他信息（如目的地、日期等），可以适当回应，但还是要询问预算
+
+输入：当前阶段：slot_filling
+用户意图：fill_budget
+上下文：等待用户提供预算信息
+已收集信息：目的地：成都青羊区
+用户刚才的回答：为我搜索成都青羊区的火锅店有几家
+
+
+
+你可以使用的工具如下:
+<APIs>
+[{'name': 'poi_search', 'description': '搜索指定地点的POI信息', 'parameters': {'type': 'object', 'properties': {'location': {'type': 'string', 'description': '搜索地点，例如：北京市海淀区'}, 'keyword': {'type': 'string', 'description': '搜索关键词，例如：餐厅、景点'}, 'radius': {'type': 'integer', 'description': '搜索半径（米），默认1000'}}, 'required': ['location', 'keyword']}}, {'name': 'search_notes', 'description': '搜索小红书笔记', 'parameters': {'type': 'object', 'properties': {'keywords': {'type': 'string', 'description': '搜索关键词'}, 'limit': {'type': 'integer', 'description': '返回结果数量限制，默认5'}}, 'required': ['keywords']}}, {'name': 'get_note_content', 'description': '获取小红书笔记详细内容', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}, {'name': 'get_note_comments', 'description': '获取小红书笔记评论', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}]
+</APIs>
+
+你必须根据用户的问题需要判断是否调用工具。如果调用能提供用户想要的内容，请务必调用对应的 API，输出格式为：
+<APIs>
+[{"name": "函数名","parameters": {"参数名": "参数"}}]
+</APIs>
+否则直接回复用户。
+2025-06-27 19:36:54,663 - talker.services.chat_service - INFO - 使用模板prompt - chat_type: ask_budget_again
+2025-06-27 19:36:54,663 - talker.services.chat_service - DEBUG - 模板数据: {'input': '当前阶段：slot_filling\n用户意图：fill_budget\n上下文：等待用户提供预算信息\n已收集信息：目的地：成都青羊区\n用户刚才的回答：为我搜索成都青羊区的火锅店有几家\n', 'phase': 'slot_filling', 'intent': 'fill_budget', 'context': '等待用户提供预算信息', 'collected_info': '目的地：成都青羊区'}
+2025-06-27 19:36:58,883 - talker.services.chat_service - INFO - === CHAT REQUEST ===
+{
+  "timestamp": "2025-06-27T19:36:58.883116",
+  "type": "request",
+  "chat_type": "ask_budget_again",
+  "message": "当前阶段：slot_filling\n用户意图：fill_budget\n上下文：等待用户提供预算信息\n已收集信息：目的地：成都青羊区\n用户刚才的回答：为我搜索成都青羊区的火锅店有几家\n",
+  "kwargs": {
+    "phase": "slot_filling",
+    "intent": "fill_budget",
+    "context": "等待用户提供预算信息",
+    "collected_info": "目的地：成都青羊区"
+  }
+}
+2025-06-27 19:36:58,885 - talker.services.chat_service - INFO - === CHAT RESPONSE ===
+{
+  "timestamp": "2025-06-27T19:36:58.883116",
+  "type": "response",
+  "success": true,
+  "content": "嘿，亲爱的朋友，你对成都青羊区的火锅店感兴趣啊！那里的火锅真是让人垂涎欲滴呢！关于预算，我建议你大概规划一下，这样能更好地享受美食和旅行体验。一般来说，在成都旅行，如果不算住宿，一个人每天大约需要300到500元的生活费用，这包括了餐饮、交通和一些简单的购物。当然，如果你有特别的需求或者想要更详细的预算规划，随时告诉我哦！期待你的回复！",
+  "full_response": {
+    "code": 0,
+    "data": {
+      "sessionId": "c8ef3434-2323-4fd0-91ea-19d1de1c6225",
+      "requestId": "8dd4bd64-93b2-40a8-9a11-ad032205f8ba",
+      "content": "嘿，亲爱的朋友，你对成都青羊区的火锅店感兴趣啊！那里的火锅真是让人垂涎欲滴呢！关于预算，我建议你大概规划一下，这样能更好地享受美食和旅行体验。一般来说，在成都旅行，如果不算住宿，一个人每天大约需要300到500元的生活费用，这包括了餐饮、交通和一些简单的购物。当然，如果你有特别的需求或者想要更详细的预算规划，随时告诉我哦！期待你的回复！",
+      "reasoningContent": null,
+      "image": null,
+      "functionCall": null,
+      "toolCall": null,
+      "toolCalls": null,
+      "contentList": null,
+      "searchInfo": null,
+      "usage": {
+        "promptTokens": null,
+        "completionTokens": null,
+        "totalTokens": null,
+        "duration": null,
+        "imageCost": null,
+        "inputImages": null,
+        "costLevel": null
+      },
+      "provider": "vivo",
+      "clearHistory": null,
+      "searchExtra": null,
+      "model": "vivo-BlueLM-TB-Pro",
+      "finishReason": "STOP",
+      "score": 0.0,
+      "modelInfo": {
+        "model": "",
+        "modelVersion": ""
+      }
+    },
+    "msg": "done."
+  }
+}
+2025-06-27 19:38:18,507 - talker.services.chat_service - INFO - 开始处理聊天请求 - chat_type: ask_budget_again, temperature: 0.7, max_tokens: 2048
+2025-06-27 19:38:18,508 - talker.services.chat_service - DEBUG - === FINAL PROMPT ===
+你是一个专业的旅行助手，正在帮助用户规划旅行。
+
+当前会话信息：
+- 当前阶段：slot_filling
+- 用户意图：fill_budget
+- 上下文：等待用户提供预算信息
+- 已收集信息：目的地：成都青羊区
+
+任务：
+如果用户刚刚有主动提问（如介绍某地消费、预算建议、旅行花费等），请先直接用详尽有趣的语言回答用户问题，展现你的专业和热情。答复后，再顺势自然地引导用户补充本次出行的预算信息。
+刚才没有理解用户的预算，请用自然、亲切的语气再次引导用户说明预算，如果用户在询问其他问题，请做出详细的回应，并在最后引导用户说明预算。
+要求：
+1. 语气要自然、亲切，不要显得不耐烦
+2. 可以根据经验给出一些预算范围的参考，具体数字需要你根据用户画像和目的地来判断
+3. 避免过于正式的询问方式
+4. 回复要简洁明了
+5. 如果用户刚才的回答中有其他信息（如目的地、日期等），可以适当回应，但还是要询问预算
+
+输入：当前阶段：slot_filling
+用户意图：fill_budget
+上下文：等待用户提供预算信息
+已收集信息：目的地：成都青羊区
+用户刚才的回答：为我搜索成都青羊区的火锅店有几家
+
+
+
+你可以使用的工具如下:
+<APIs>
+[{'name': 'poi_search', 'description': '搜索指定地点的POI信息', 'parameters': {'type': 'object', 'properties': {'location': {'type': 'string', 'description': '搜索地点，例如：北京市海淀区'}, 'keyword': {'type': 'string', 'description': '搜索关键词，例如：餐厅、景点'}, 'radius': {'type': 'integer', 'description': '搜索半径（米），默认1000'}}, 'required': ['location', 'keyword']}}, {'name': 'search_notes', 'description': '搜索小红书笔记', 'parameters': {'type': 'object', 'properties': {'keywords': {'type': 'string', 'description': '搜索关键词'}, 'limit': {'type': 'integer', 'description': '返回结果数量限制，默认5'}}, 'required': ['keywords']}}, {'name': 'get_note_content', 'description': '获取小红书笔记详细内容', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}, {'name': 'get_note_comments', 'description': '获取小红书笔记评论', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}]
+</APIs>
+
+你必须根据用户的问题需要判断是否调用工具。如果调用能提供用户想要的内容，请务必调用对应的 API，输出格式为：
+<APIs>
+[{"name": "函数名","parameters": {"参数名": "参数"}}]
+</APIs>
+否则直接回复用户。
+2025-06-27 19:38:18,510 - talker.services.chat_service - INFO - 使用模板prompt - chat_type: ask_budget_again
+2025-06-27 19:38:18,511 - talker.services.chat_service - DEBUG - 模板数据: {'input': '当前阶段：slot_filling\n用户意图：fill_budget\n上下文：等待用户提供预算信息\n已收集信息：目的地：成都青羊区\n用户刚才的回答：为我搜索成都青羊区的火锅店有几家\n', 'phase': 'slot_filling', 'intent': 'fill_budget', 'context': '等待用户提供预算信息', 'collected_info': '目的地：成都青羊区'}
+2025-06-27 19:38:23,025 - talker.services.chat_service - INFO - === CHAT REQUEST ===
+{
+  "timestamp": "2025-06-27T19:38:23.025510",
+  "type": "request",
+  "chat_type": "ask_budget_again",
+  "message": "当前阶段：slot_filling\n用户意图：fill_budget\n上下文：等待用户提供预算信息\n已收集信息：目的地：成都青羊区\n用户刚才的回答：为我搜索成都青羊区的火锅店有几家\n",
+  "kwargs": {
+    "phase": "slot_filling",
+    "intent": "fill_budget",
+    "context": "等待用户提供预算信息",
+    "collected_info": "目的地：成都青羊区"
+  }
+}
+2025-06-27 19:38:23,027 - talker.services.chat_service - INFO - === CHAT RESPONSE ===
+{
+  "timestamp": "2025-06-27T19:38:23.025510",
+  "type": "response",
+  "success": true,
+  "content": "嘿，亲爱的朋友，你对成都青羊区的火锅店感兴趣啊！那里的火锅真是让人垂涎欲滴呢！关于预算，我建议你大概规划一下，这样能更好地享受美食和旅行体验。一般来说，在成都旅行，如果不算住宿，一个人每天大约需要300到500元的生活费用，这包括了餐饮、交通和一些简单的购物。当然，如果你有特别的需求或者想要更详细的预算规划，随时告诉我哦！期待你的回复！",
+  "full_response": {
+    "code": 0,
+    "data": {
+      "sessionId": "c8ef3434-2323-4fd0-91ea-19d1de1c6225",
+      "requestId": "f8633c3f-5fa7-411f-ac56-58b621293bc8",
+      "content": "嘿，亲爱的朋友，你对成都青羊区的火锅店感兴趣啊！那里的火锅真是让人垂涎欲滴呢！关于预算，我建议你大概规划一下，这样能更好地享受美食和旅行体验。一般来说，在成都旅行，如果不算住宿，一个人每天大约需要300到500元的生活费用，这包括了餐饮、交通和一些简单的购物。当然，如果你有特别的需求或者想要更详细的预算规划，随时告诉我哦！期待你的回复！",
+      "reasoningContent": null,
+      "image": null,
+      "functionCall": null,
+      "toolCall": null,
+      "toolCalls": null,
+      "contentList": null,
+      "searchInfo": null,
+      "usage": {
+        "promptTokens": null,
+        "completionTokens": null,
+        "totalTokens": null,
+        "duration": null,
+        "imageCost": null,
+        "inputImages": null,
+        "costLevel": null
+      },
+      "provider": "vivo",
+      "clearHistory": null,
+      "searchExtra": null,
+      "model": "vivo-BlueLM-TB-Pro",
+      "finishReason": "STOP",
+      "score": 0.0,
+      "modelInfo": {
+        "model": "",
+        "modelVersion": ""
+      }
+    },
+    "msg": "done."
+  }
+}
+2025-06-27 19:38:39,432 - talker.services.chat_service - INFO - 开始处理聊天请求 - chat_type: ask_destination, temperature: 0.7, max_tokens: 2048
+2025-06-27 19:38:39,433 - talker.services.chat_service - DEBUG - === FINAL PROMPT ===
+你是一个专业的旅行助手，正在帮助用户规划旅行。
+
+当前会话信息：
+- 当前阶段：slot_filling
+- 用户意图：fill_destination
+- 上下文：等待用户提供目的地信息
+- 已收集信息：暂无信息
+
+任务：
+如果用户主动提问（如介绍某地、玩法、美食、体验等），请先直接用详尽有趣的语言回答用户问题，展现你的专业和热情。答复后，再顺势自然地引导用户补充本次出行的关键信息（如目的地、预算、时间、同行等）。
+用自然、亲切的语气询问用户本次想去哪个城市或景区，避免机械式表达。
+要求：
+1. 语气要自然、亲切，像朋友间的对话
+2. 避免过于正式的询问方式
+3. 可以适当引导用户，比如提到一些热门目的地作为参考
+4. 回复要简洁明了，不要过于冗长
+
+输入：当前阶段：slot_filling
+用户意图：fill_destination
+上下文：等待用户提供目的地信息
+已收集信息：暂无信息
+
+
+你可以使用的工具如下:
+<APIs>
+[{'name': 'poi_search', 'description': '搜索指定地点的POI信息', 'parameters': {'type': 'object', 'properties': {'location': {'type': 'string', 'description': '搜索地点，例如：北京市海淀区'}, 'keyword': {'type': 'string', 'description': '搜索关键词，例如：餐厅、景点'}, 'radius': {'type': 'integer', 'description': '搜索半径（米），默认1000'}}, 'required': ['location', 'keyword']}}, {'name': 'search_notes', 'description': '搜索小红书笔记', 'parameters': {'type': 'object', 'properties': {'keywords': {'type': 'string', 'description': '搜索关键词'}, 'limit': {'type': 'integer', 'description': '返回结果数量限制，默认5'}}, 'required': ['keywords']}}, {'name': 'get_note_content', 'description': '获取小红书笔记详细内容', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}, {'name': 'get_note_comments', 'description': '获取小红书笔记评论', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}]
+</APIs>
+
+你必须根据用户的问题需要判断是否调用工具。如果调用能提供用户想要的内容，请务必调用对应的 API，输出格式为：
+<APIs>
+[{"name": "函数名","parameters": {"参数名": "参数"}}]
+</APIs>
+否则直接回复用户。
+2025-06-27 19:38:39,435 - talker.services.chat_service - INFO - 使用模板prompt - chat_type: ask_destination
+2025-06-27 19:38:39,436 - talker.services.chat_service - DEBUG - 模板数据: {'input': '当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息', 'phase': 'slot_filling', 'intent': 'fill_destination', 'context': '等待用户提供目的地信息', 'collected_info': '暂无信息'}
+2025-06-27 19:38:41,918 - talker.services.chat_service - INFO - === CHAT REQUEST ===
+{
+  "timestamp": "2025-06-27T19:38:41.918814",
+  "type": "request",
+  "chat_type": "ask_destination",
+  "message": "当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息",
+  "kwargs": {
+    "phase": "slot_filling",
+    "intent": "fill_destination",
+    "context": "等待用户提供目的地信息",
+    "collected_info": "暂无信息"
+  }
+}
+2025-06-27 19:38:41,920 - talker.services.chat_service - INFO - === CHAT RESPONSE ===
+{
+  "timestamp": "2025-06-27T19:38:41.918814",
+  "type": "response",
+  "success": true,
+  "content": "嗨，朋友！在规划旅行的时候，第一步就是确定我们的目的地。你有什么特别想去的地方吗？是一个海边的度假胜地，还是一座充满历史韵味的古城？告诉我你的想法，让我们一起打造一次难忘的旅程吧！",
+  "full_response": {
+    "code": 0,
+    "data": {
+      "sessionId": "22dc4603-d07f-4d6b-b456-8b6eddcd1fb1",
+      "requestId": "5e116ab9-e769-42c8-b5c4-9529f718e2de",
+      "content": "嗨，朋友！在规划旅行的时候，第一步就是确定我们的目的地。你有什么特别想去的地方吗？是一个海边的度假胜地，还是一座充满历史韵味的古城？告诉我你的想法，让我们一起打造一次难忘的旅程吧！",
+      "reasoningContent": null,
+      "image": null,
+      "functionCall": null,
+      "toolCall": null,
+      "toolCalls": null,
+      "contentList": null,
+      "searchInfo": null,
+      "usage": {
+        "promptTokens": null,
+        "completionTokens": null,
+        "totalTokens": null,
+        "duration": null,
+        "imageCost": null,
+        "inputImages": null,
+        "costLevel": null
+      },
+      "provider": "vivo",
+      "clearHistory": null,
+      "searchExtra": null,
+      "model": "vivo-BlueLM-TB-Pro",
+      "finishReason": "STOP",
+      "score": 0.0,
+      "modelInfo": {
+        "model": "",
+        "modelVersion": ""
+      }
+    },
+    "msg": "done."
+  }
+}
+2025-06-27 19:38:54,245 - talker.services.chat_service - INFO - 开始处理聊天请求 - chat_type: ask_destination_again, temperature: 0.7, max_tokens: 2048
+2025-06-27 19:38:54,245 - talker.services.chat_service - DEBUG - === FINAL PROMPT ===
+你是一个专业的旅行助手，正在帮助用户规划旅行。
+
+当前会话信息：
+- 当前阶段：slot_filling
+- 用户意图：fill_destination
+- 上下文：等待用户提供目的地信息
+- 已收集信息：暂无信息
+
+任务：
+如果用户刚刚有主动提问（如介绍某地、玩法、美食、体验等），请先直接用详尽有趣的语言回答用户问题，展现你的专业和热情。答复后，再顺势自然地引导用户补充本次想去的地方。
+刚才没有理解用户的目的地，请用自然、亲切的语气再次引导用户说明想去的地方，如果用户在询问其他问题，请做出详细的回应，并在最后引导用户说明想去的地方。
+要求：
+1. 语气要自然、亲切，不要显得不耐烦
+2. 可以给出一些具体的例子帮助用户理解
+3. 避免过于正式的询问方式
+4. 回复要简洁明了
+5. 如果用户刚才的回答中有其他信息（如日期、预算等），可以适当回应，但还是要询问目的地
+
+输入：当前阶段：slot_filling
+用户意图：fill_destination
+上下文：等待用户提供目的地信息
+已收集信息：暂无信息
+用户刚才的回答：成都青羊区的火锅有哪些
+
+
+
+你可以使用的工具如下:
+<APIs>
+[{'name': 'poi_search', 'description': '搜索指定地点的POI信息', 'parameters': {'type': 'object', 'properties': {'location': {'type': 'string', 'description': '搜索地点，例如：北京市海淀区'}, 'keyword': {'type': 'string', 'description': '搜索关键词，例如：餐厅、景点'}, 'radius': {'type': 'integer', 'description': '搜索半径（米），默认1000'}}, 'required': ['location', 'keyword']}}, {'name': 'search_notes', 'description': '搜索小红书笔记', 'parameters': {'type': 'object', 'properties': {'keywords': {'type': 'string', 'description': '搜索关键词'}, 'limit': {'type': 'integer', 'description': '返回结果数量限制，默认5'}}, 'required': ['keywords']}}, {'name': 'get_note_content', 'description': '获取小红书笔记详细内容', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}, {'name': 'get_note_comments', 'description': '获取小红书笔记评论', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}]
+</APIs>
+
+你必须根据用户的问题需要判断是否调用工具。如果调用能提供用户想要的内容，请务必调用对应的 API，输出格式为：
+<APIs>
+[{"name": "函数名","parameters": {"参数名": "参数"}}]
+</APIs>
+否则直接回复用户。
+2025-06-27 19:38:54,248 - talker.services.chat_service - INFO - 使用模板prompt - chat_type: ask_destination_again
+2025-06-27 19:38:54,248 - talker.services.chat_service - DEBUG - 模板数据: {'input': '当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息\n用户刚才的回答：成都青羊区的火锅有哪些\n', 'phase': 'slot_filling', 'intent': 'fill_destination', 'context': '等待用户提供目的地信息', 'collected_info': '暂无信息'}
+2025-06-27 19:38:56,750 - talker.services.chat_service - INFO - === CHAT REQUEST ===
+{
+  "timestamp": "2025-06-27T19:38:56.750325",
+  "type": "request",
+  "chat_type": "ask_destination_again",
+  "message": "当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息\n用户刚才的回答：成都青羊区的火锅有哪些\n",
+  "kwargs": {
+    "phase": "slot_filling",
+    "intent": "fill_destination",
+    "context": "等待用户提供目的地信息",
+    "collected_info": "暂无信息"
+  }
+}
+2025-06-27 19:38:56,753 - talker.services.chat_service - INFO - === CHAT RESPONSE ===
+{
+  "timestamp": "2025-06-27T19:38:56.750325",
+  "type": "response",
+  "success": true,
+  "content": "哇，你的成都青羊区火锅之旅听起来就让人垂涎欲滴！不过，为了更好地帮你规划这次旅行，我还需要知道具体的目的地。你打算去成都的哪个区域呢？这样我可以为你提供更详细的旅行建议和规划！",
+  "full_response": {
+    "code": 0,
+    "data": {
+      "sessionId": "22dc4603-d07f-4d6b-b456-8b6eddcd1fb1",
+      "requestId": "fd9486f1-e167-464d-a9d0-474d515f61f9",
+      "content": "哇，你的成都青羊区火锅之旅听起来就让人垂涎欲滴！不过，为了更好地帮你规划这次旅行，我还需要知道具体的目的地。你打算去成都的哪个区域呢？这样我可以为你提供更详细的旅行建议和规划！",
+      "reasoningContent": null,
+      "image": null,
+      "functionCall": null,
+      "toolCall": null,
+      "toolCalls": null,
+      "contentList": null,
+      "searchInfo": null,
+      "usage": {
+        "promptTokens": null,
+        "completionTokens": null,
+        "totalTokens": null,
+        "duration": null,
+        "imageCost": null,
+        "inputImages": null,
+        "costLevel": null
+      },
+      "provider": "vivo",
+      "clearHistory": null,
+      "searchExtra": null,
+      "model": "vivo-BlueLM-TB-Pro",
+      "finishReason": "STOP",
+      "score": 0.0,
+      "modelInfo": {
+        "model": "",
+        "modelVersion": ""
+      }
+    },
+    "msg": "done."
+  }
+}
+2025-06-27 19:39:44,300 - talker.services.chat_service - INFO - 开始处理聊天请求 - chat_type: ask_destination_again, temperature: 0.7, max_tokens: 2048
+2025-06-27 19:39:44,301 - talker.services.chat_service - DEBUG - === FINAL PROMPT ===
+你是一个专业的旅行助手，正在帮助用户规划旅行。
+
+当前会话信息：
+- 当前阶段：slot_filling
+- 用户意图：fill_destination
+- 上下文：等待用户提供目的地信息
+- 已收集信息：暂无信息
+
+任务：
+如果用户刚刚有主动提问（如介绍某地、玩法、美食、体验等），请先直接用详尽有趣的语言回答用户问题，展现你的专业和热情。答复后，再顺势自然地引导用户补充本次想去的地方。
+刚才没有理解用户的目的地，请用自然、亲切的语气再次引导用户说明想去的地方，如果用户在询问其他问题，请做出详细的回应，并在最后引导用户说明想去的地方。
+要求：
+1. 语气要自然、亲切，不要显得不耐烦
+2. 可以给出一些具体的例子帮助用户理解
+3. 避免过于正式的询问方式
+4. 回复要简洁明了
+5. 如果用户刚才的回答中有其他信息（如日期、预算等），可以适当回应，但还是要询问目的地
+
+输入：当前阶段：slot_filling
+用户意图：fill_destination
+上下文：等待用户提供目的地信息
+已收集信息：暂无信息
+用户刚才的回答：用poi_search为我搜索成都附近的火锅有哪些
+
+
+
+你可以使用的工具如下:
+<APIs>
+[{'name': 'poi_search', 'description': '搜索指定地点的POI信息', 'parameters': {'type': 'object', 'properties': {'location': {'type': 'string', 'description': '搜索地点，例如：北京市海淀区'}, 'keyword': {'type': 'string', 'description': '搜索关键词，例如：餐厅、景点'}, 'radius': {'type': 'integer', 'description': '搜索半径（米），默认1000'}}, 'required': ['location', 'keyword']}}, {'name': 'search_notes', 'description': '搜索小红书笔记', 'parameters': {'type': 'object', 'properties': {'keywords': {'type': 'string', 'description': '搜索关键词'}, 'limit': {'type': 'integer', 'description': '返回结果数量限制，默认5'}}, 'required': ['keywords']}}, {'name': 'get_note_content', 'description': '获取小红书笔记详细内容', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}, {'name': 'get_note_comments', 'description': '获取小红书笔记评论', 'parameters': {'type': 'object', 'properties': {'url': {'type': 'string', 'description': '笔记链接'}}, 'required': ['url']}}]
+</APIs>
+
+你必须根据用户的问题需要判断是否调用工具。如果调用能提供用户想要的内容，请务必调用对应的 API，输出格式为：
+<APIs>
+[{"name": "函数名","parameters": {"参数名": "参数"}}]
+</APIs>
+否则直接回复用户。
+2025-06-27 19:39:44,304 - talker.services.chat_service - INFO - 使用模板prompt - chat_type: ask_destination_again
+2025-06-27 19:39:44,304 - talker.services.chat_service - DEBUG - 模板数据: {'input': '当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息\n用户刚才的回答：用poi_search为我搜索成都附近的火锅有哪些\n', 'phase': 'slot_filling', 'intent': 'fill_destination', 'context': '等待用户提供目的地信息', 'collected_info': '暂无信息'}
+2025-06-27 19:39:47,379 - talker.services.chat_service - INFO - === CHAT REQUEST ===
+{
+  "timestamp": "2025-06-27T19:39:47.379616",
+  "type": "request",
+  "chat_type": "ask_destination_again",
+  "message": "当前阶段：slot_filling\n用户意图：fill_destination\n上下文：等待用户提供目的地信息\n已收集信息：暂无信息\n用户刚才的回答：用poi_search为我搜索成都附近的火锅有哪些\n",
+  "kwargs": {
+    "phase": "slot_filling",
+    "intent": "fill_destination",
+    "context": "等待用户提供目的地信息",
+    "collected_info": "暂无信息"
+  }
+}
+2025-06-27 19:39:47,381 - talker.services.chat_service - INFO - === CHAT RESPONSE ===
+{
+  "timestamp": "2025-06-27T19:39:47.379616",
+  "type": "response",
+  "success": true,
+  "content": "哇，成都的火锅真是让人垂涎欲滴！为了帮你找到最正宗的火锅店，我会用poi_search来搜索成都附近的火锅店。这样你就可以尽情享受美食啦！顺便问一下，你打算去成都的哪个区域呢？这样我可以为你提供更详细的旅行建议和规划！",
+  "full_response": {
+    "code": 0,
+    "data": {
+      "sessionId": "22dc4603-d07f-4d6b-b456-8b6eddcd1fb1",
+      "requestId": "50268984-1dc2-4535-ad93-85d2d5664e96",
+      "content": "哇，成都的火锅真是让人垂涎欲滴！为了帮你找到最正宗的火锅店，我会用poi_search来搜索成都附近的火锅店。这样你就可以尽情享受美食啦！顺便问一下，你打算去成都的哪个区域呢？这样我可以为你提供更详细的旅行建议和规划！",
+      "reasoningContent": null,
+      "image": null,
+      "functionCall": null,
+      "toolCall": null,
+      "toolCalls": null,
+      "contentList": null,
+      "searchInfo": null,
+      "usage": {
+        "promptTokens": null,
+        "completionTokens": null,
+        "totalTokens": null,
+        "duration": null,
+        "imageCost": null,
+        "inputImages": null,
+        "costLevel": null
+      },
+      "provider": "vivo",
+      "clearHistory": null,
+      "searchExtra": null,
+      "model": "vivo-BlueLM-TB-Pro",
+      "finishReason": "STOP",
+      "score": 0.0,
+      "modelInfo": {
+        "model": "",
+        "modelVersion": ""
+      }
+    },
+    "msg": "done."
+  }
+}
