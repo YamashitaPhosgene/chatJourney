@@ -336,11 +336,98 @@ class XiaohongshuSummaryService:
         try:
             print(f"开始生成总结，关键词: {keyword}, 类型: {summary_type}, 笔记数量: {len(notes)}")
             
-            # 构建提示词
             if len(notes) == 1:
                 # 单条笔记总结
                 note = notes[0]
-                prompt = f"""请对以下小红书笔记内容进行{summary_type}总结：
+                single_summary = await self._generate_single_note_summary(note, summary_type)
+                
+                # 保存单条笔记总结到JSON
+                summary_data = {
+                    "keyword": keyword,
+                    "summary_type": summary_type,
+                    "notes_count": 1,
+                    "single_summaries": [
+                        {
+                            "note_index": 1,
+                            "note_data": note,
+                            "summary": single_summary
+                        }
+                    ],
+                    "final_summary": single_summary,
+                    "generated_at": self._get_current_timestamp()
+                }
+                
+                self._save_summary_to_json(summary_data, keyword, summary_type)
+                return single_summary
+            else:
+                # 多条笔记并行处理
+                print(f"开始并行处理 {len(notes)} 条笔记...")
+                
+                # 并行生成单条笔记总结
+                tasks = []
+                for i, note in enumerate(notes):
+                    task = self._generate_single_note_summary(note, summary_type, note_index=i+1)
+                    tasks.append(task)
+                
+                # 等待所有任务完成
+                single_summaries = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # 过滤掉异常结果并构建单笔记总结数据
+                valid_summaries = []
+                single_summary_data = []
+                
+                for i, summary in enumerate(single_summaries):
+                    if isinstance(summary, Exception):
+                        print(f"笔记 {i+1} 总结生成失败: {summary}")
+                        continue
+                    valid_summaries.append(summary)
+                    single_summary_data.append({
+                        "note_index": i + 1,
+                        "note_data": notes[i],
+                        "summary": summary
+                    })
+                
+                if not valid_summaries:
+                    return "所有笔记总结生成失败"
+                
+                # 生成最终汇总总结
+                final_summary = await self._generate_final_summary(keyword, valid_summaries, summary_type)
+                
+                # 保存完整总结数据到JSON
+                summary_data = {
+                    "keyword": keyword,
+                    "summary_type": summary_type,
+                    "notes_count": len(valid_summaries),
+                    "single_summaries": single_summary_data,
+                    "final_summary": final_summary,
+                    "generated_at": self._get_current_timestamp()
+                }
+                
+                self._save_summary_to_json(summary_data, keyword, summary_type)
+                return final_summary
+                
+        except Exception as e:
+            print(f"生成总结异常: {e}")
+            import traceback
+            print(f"异常堆栈: {traceback.format_exc()}")
+            return f"总结生成失败: {str(e)}"
+    
+    async def _generate_single_note_summary(self, note: Dict, summary_type: str, note_index: int = 1) -> str:
+        """生成单条笔记的总结
+        
+        Args:
+            note: 笔记数据
+            summary_type: 总结类型
+            note_index: 笔记索引（用于标识）
+            
+        Returns:
+            单条笔记的总结
+        """
+        try:
+            print(f"开始生成笔记 {note_index} 的总结...")
+            
+            # 构建单条笔记的提示词
+            prompt = f"""请对以下小红书笔记内容进行{summary_type}总结：
 
 笔记信息：
 - 标题：{note.get('title', '未知')}
@@ -349,84 +436,111 @@ class XiaohongshuSummaryService:
 - 点赞数：{note.get('likes', 0)}
 - IP地址：{note.get('ip', '未知')}
 - 标签：{', '.join(note.get('tags', []))}
-- 链接：{note.get('url', '未知')}
 
 笔记内容：
 {note.get('content', '无内容')}
 
 {f"评论内容：\n{note.get('comments', '')}" if note.get('comments') else ""}
 
-请根据以上信息，生成一个{summary_type}的总结。总结应该：
+请根据以上信息，生成一个简洁的{summary_type}总结。总结应该：
 1. 突出笔记的核心观点和主要内容
 2. 分析笔记的受欢迎程度（基于点赞数）
 3. 总结用户反馈和评论要点
-4. 提供有价值的见解和建议
+4. 提供有价值的见解
 
-总结要求：
+要求：
 - 语言简洁明了
-- 结构清晰
 - 重点突出
-- 实用性强
-
-请开始总结："""
-            else:
-                # 多条笔记总结
-                notes_text = ""
-                for i, note in enumerate(notes, 1):
-                    notes_text += f"\n=== 笔记 {i} ===\n"
-                    notes_text += f"标题：{note.get('title', '未知')}\n"
-                    notes_text += f"作者：{note.get('author', '未知')}\n"
-                    notes_text += f"发布时间：{note.get('publish_time', '未知')}\n"
-                    notes_text += f"点赞数：{note.get('likes', 0)}\n"
-                    notes_text += f"IP地址：{note.get('ip', '未知')}\n"
-                    notes_text += f"标签：{', '.join(note.get('tags', []))}\n"
-                    notes_text += f"链接：{note.get('url', '未知')}\n"
-                    notes_text += f"内容：{note.get('content', '无内容')}\n"
-                    if note.get('comments'):
-                        notes_text += f"评论：{note.get('comments')}\n"
-                
-                prompt = f"""请对以下{len(notes)}条小红书笔记内容进行{summary_type}总结：
-
-搜索关键词：{keyword}
-
-笔记列表：
-{notes_text}
-
-请根据以上信息，生成一个{summary_type}的总结。总结应该：
-1. 分析所有笔记的共同主题和核心观点
-2. 对比不同笔记的受欢迎程度（基于点赞数）
-3. 总结用户反馈和评论要点
-4. 提供有价值的见解和建议
-
-总结要求：
-- 语言简洁明了
-- 结构清晰
-- 重点突出
-- 实用性强
+- 控制在200字以内
 
 请开始总结："""
             
             # 调用聊天服务生成总结
-            print("开始调用ChatService...")
+            print(f"调用ChatService生成笔记 {note_index} 总结...")
             response = self.chat_service.process_chat(
                 message=prompt,
                 temperature=0.7,
-                max_tokens=2048
+                max_tokens=500  # 减少token限制，确保简洁
             )
-            print(f"ChatService响应类型: {type(response)}")
-            print(f"ChatService响应: {response}")
-            
-            if isinstance(response, dict) and response.get("error"):
-                print(f"生成总结失败: {response.get('message', '未知错误')}")
-                return f"总结生成失败: {response.get('message', '未知错误')}"
             
             # 提取响应内容
-            if hasattr(response, 'json'):
-                result = response.json()
-                print(f"JSON响应: {result}")
-                return result.get("content", "总结生成失败")
-            elif isinstance(response, dict):
-                print(f"字典响应: {response}")
+            summary = self._extract_response_content(response)
+            print(f"笔记 {note_index} 总结生成完成，长度: {len(summary)}")
+            return summary
+            
+        except Exception as e:
+            print(f"生成笔记 {note_index} 总结异常: {e}")
+            return f"笔记 {note_index} 总结生成失败: {str(e)}"
+    
+    async def _generate_final_summary(self, keyword: str, single_summaries: List[str], summary_type: str) -> str:
+        """生成最终汇总总结
+        
+        Args:
+            keyword: 搜索关键词
+            single_summaries: 单条笔记总结列表
+            summary_type: 总结类型
+            
+        Returns:
+            最终汇总总结
+        """
+        try:
+            print(f"开始生成最终汇总总结，共 {len(single_summaries)} 条单笔记总结")
+            
+            # 构建汇总提示词
+            summaries_text = ""
+            for i, summary in enumerate(single_summaries, 1):
+                summaries_text += f"\n=== 笔记 {i} 总结 ===\n{summary}\n"
+            
+            prompt = f"""请基于以下{len(single_summaries)}条小红书笔记的总结，为关键词"{keyword}"生成一份最终的{summary_type}汇总分析：
+
+搜索关键词：{keyword}
+
+各笔记总结：
+{summaries_text}
+
+请根据以上总结，生成一份最终的{summary_type}汇总分析。分析应该：
+1. 识别所有笔记的共同主题和核心观点
+2. 对比不同笔记的受欢迎程度和评价
+3. 总结用户反馈和评论要点
+4. 提供有价值的见解和建议
+
+要求：
+- 语言简洁明了
+- 结构清晰
+- 重点突出
+- 实用性强
+- 控制在500字以内
+
+请开始汇总分析："""
+            
+            # 调用聊天服务生成最终总结
+            print("调用ChatService生成最终汇总总结...")
+            response = self.chat_service.process_chat(
+                message=prompt,
+                temperature=0.7,
+                max_tokens=1000
+            )
+            
+            # 提取响应内容
+            final_summary = self._extract_response_content(response)
+            print(f"最终汇总总结生成完成，长度: {len(final_summary)}")
+            return final_summary
+            
+        except Exception as e:
+            print(f"生成最终汇总总结异常: {e}")
+            return f"最终汇总总结生成失败: {str(e)}"
+    
+    def _extract_response_content(self, response) -> str:
+        """提取响应内容
+        
+        Args:
+            response: ChatService的响应
+            
+        Returns:
+            提取的内容
+        """
+        try:
+            if isinstance(response, dict):
                 # 处理VivoGPT的响应结构
                 if response.get("code") == 0 and "data" in response:
                     data = response["data"]
@@ -436,17 +550,15 @@ class XiaohongshuSummaryService:
                         return str(data)
                 elif "content" in response:
                     return response["content"]
+                elif "data" in response and "content" in response["data"]:
+                    return response["data"]["content"]
                 else:
                     return str(response)
             else:
-                print(f"其他类型响应: {response}")
                 return str(response)
-                
         except Exception as e:
-            print(f"生成总结异常: {e}")
-            import traceback
-            print(f"异常堆栈: {traceback.format_exc()}")
-            return f"总结生成失败: {str(e)}"
+            print(f"提取响应内容失败: {e}")
+            return str(response)
     
     def _build_summary_prompt(self, keyword: str, notes: List[Dict], summary_type: str) -> str:
         """构建总结提示词
@@ -638,6 +750,47 @@ class XiaohongshuSummaryService:
         except Exception as e:
             logger.error(f"解析笔记内容结构化信息失败: {e}")
             return {}
+    
+    def _save_summary_to_json(self, summary_data: Dict, keyword: str, summary_type: str):
+        """保存总结数据到JSON文件
+        
+        Args:
+            summary_data: 总结数据
+            keyword: 搜索关键词
+            summary_type: 总结类型
+        """
+        try:
+            import os
+            from datetime import datetime
+            
+            # 创建保存目录
+            save_dir = "summary_results"
+            os.makedirs(save_dir, exist_ok=True)
+            
+            # 生成文件名
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_keyword = "".join(c for c in keyword if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            safe_keyword = safe_keyword.replace(' ', '_')
+            filename = f"summary_{summary_type}_{safe_keyword}_{timestamp}.json"
+            filepath = os.path.join(save_dir, filename)
+            
+            # 保存到JSON文件
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(summary_data, f, ensure_ascii=False, indent=2)
+            
+            print(f"✅ 总结数据已保存到: {filepath}")
+            
+        except Exception as e:
+            print(f"❌ 保存总结数据失败: {e}")
+    
+    def _get_current_timestamp(self) -> str:
+        """获取当前时间戳
+        
+        Returns:
+            格式化的时间戳字符串
+        """
+        from datetime import datetime
+        return datetime.now().isoformat()
 
 # 创建全局实例
 summary_service = XiaohongshuSummaryService() 

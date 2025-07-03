@@ -145,3 +145,6 @@ REST_FRAMEWORK = {
 # VivoGPT配置
 VIVO_APP_ID = os.getenv('VIVO_APP_ID')
 VIVO_APP_KEY = os.getenv('VIVO_APP_KEY')
+
+# 高德地图配置
+AMAP_KEY = os.getenv('AMAP_KEY')

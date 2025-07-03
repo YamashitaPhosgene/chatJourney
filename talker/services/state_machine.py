@@ -18,6 +18,8 @@ class TravelAssistantFSM:
     states = [
         'INIT',                    # 初始状态
         'SLOT_FILLING_DESTINATION', # 等待目的地
+        'SLOT_FILLING_DESTINATION_DEEP', # 深化目的地询问
+        'SLOT_FILLING_DESTINATION_CONFIRM', # 确认目的地
         'SLOT_FILLING_BUDGET',      # 等待预算
         'SLOT_FILLING_DATES',       # 等待日期
         'SLOT_FILLING_PROFILE',     # 等待用户画像（包含同行人员）
@@ -62,23 +64,31 @@ class TravelAssistantFSM:
     
     def _setup_transitions(self):
         """设置状态转移"""
-        # 从初始状态开始 - 移除after回调，避免重复调用
+        # 从初始状态开始
         self.machine.add_transition('start', 'INIT', 'SLOT_FILLING_DESTINATION')
         
-        # 目的地槽位
-        self.machine.add_transition('user_provides_destination', 'SLOT_FILLING_DESTINATION', 'SLOT_FILLING_BUDGET', after='handle_slot')
+        # 目的地槽位 - 修改为多阶段流程
+        self.machine.add_transition('user_provides_destination', 'SLOT_FILLING_DESTINATION', 'SLOT_FILLING_DESTINATION_DEEP')
         self.machine.add_transition('slot_invalid_destination', 'SLOT_FILLING_DESTINATION', 'SLOT_FILLING_DESTINATION')
         
+        # 深化目的地询问
+        self.machine.add_transition('destination_deep_complete', 'SLOT_FILLING_DESTINATION_DEEP', 'SLOT_FILLING_DESTINATION_CONFIRM')
+        self.machine.add_transition('destination_deep_continue', 'SLOT_FILLING_DESTINATION_DEEP', 'SLOT_FILLING_DESTINATION_DEEP')
+        
+        # 确认目的地
+        self.machine.add_transition('destination_confirmed', 'SLOT_FILLING_DESTINATION_CONFIRM', 'SLOT_FILLING_BUDGET')
+        self.machine.add_transition('destination_not_confirmed', 'SLOT_FILLING_DESTINATION_CONFIRM', 'SLOT_FILLING_DESTINATION_DEEP')
+        
         # 预算槽位
-        self.machine.add_transition('user_provides_budget', 'SLOT_FILLING_BUDGET', 'SLOT_FILLING_DATES', after='handle_slot')
+        self.machine.add_transition('user_provides_budget', 'SLOT_FILLING_BUDGET', 'SLOT_FILLING_DATES')
         self.machine.add_transition('slot_invalid_budget', 'SLOT_FILLING_BUDGET', 'SLOT_FILLING_BUDGET')
         
         # 日期槽位
-        self.machine.add_transition('user_provides_dates', 'SLOT_FILLING_DATES', 'SLOT_FILLING_PROFILE', after='handle_slot')
+        self.machine.add_transition('user_provides_dates', 'SLOT_FILLING_DATES', 'SLOT_FILLING_PROFILE')
         self.machine.add_transition('slot_invalid_dates', 'SLOT_FILLING_DATES', 'SLOT_FILLING_DATES')
         
         # 用户画像槽位
-        self.machine.add_transition('user_provides_profile', 'SLOT_FILLING_PROFILE', 'CONFIRMATION', after='handle_slot')
+        self.machine.add_transition('user_provides_profile', 'SLOT_FILLING_PROFILE', 'CONFIRMATION')
         self.machine.add_transition('slot_invalid_profile', 'SLOT_FILLING_PROFILE', 'SLOT_FILLING_PROFILE')
         
         # 确认阶段
@@ -92,6 +102,8 @@ class TravelAssistantFSM:
         """设置事件处理函数"""
         # 进入状态时的处理
         self.machine.on_enter_SLOT_FILLING_DESTINATION(self._on_enter_fill_destination)
+        self.machine.on_enter_SLOT_FILLING_DESTINATION_DEEP(self._on_enter_fill_destination_deep)
+        self.machine.on_enter_SLOT_FILLING_DESTINATION_CONFIRM(self._on_enter_fill_destination_confirm)
         self.machine.on_enter_SLOT_FILLING_BUDGET(self._on_enter_fill_budget)
         self.machine.on_enter_SLOT_FILLING_DATES(self._on_enter_fill_dates)
         self.machine.on_enter_SLOT_FILLING_PROFILE(self._on_enter_fill_profile)
@@ -107,6 +119,23 @@ class TravelAssistantFSM:
             "phase": "slot_filling",
             "intent": "fill_destination",
             "context": "等待用户提供目的地信息"
+        })
+    
+    def _on_enter_fill_destination_deep(self, *args, **kwargs):
+        """进入深化目的地询问状态，仅设置状态，不自动搜索POI"""
+        self._set_session_state({
+            "phase": "slot_filling",
+            "intent": "fill_destination_deep",
+            "context": "深化目的地询问"
+        })
+        # 不再自动搜索POI
+    
+    def _on_enter_fill_destination_confirm(self, *args, **kwargs):
+        """进入确认目的地状态"""
+        self._set_session_state({
+            "phase": "slot_filling",
+            "intent": "fill_destination_confirm",
+            "context": "确认目的地"
         })
     
     def _on_enter_fill_budget(self, *args, **kwargs):
@@ -188,12 +217,6 @@ class TravelAssistantFSM:
         
         return response_text
     
-    def handle_slot(self, value, *args, **kwargs):
-        """统一处理槽位信息 - 从session中提取所有槽位信息"""
-        # 从session中提取所有槽位信息
-        self._update_slots_from_session()
-        logging.info("已从session更新所有槽位信息")
-    
     def ask_destination_again(self, user_input: str = "", *args, **kwargs):
         """重新询问目的地"""
         logging.info("重新询问用户目的地")
@@ -215,6 +238,78 @@ class TravelAssistantFSM:
             collected_info=collected_info
         )
         response_text = response.get('data', {}).get('content', '请重新告诉我您的目的地。')
+        
+        # 添加助手消息到历史记录
+        self.add_assistant_message(response_text)
+        
+        return response_text
+    
+    def ask_destination_deep(self, user_input: str = "", *args, **kwargs):
+        """深化询问目的地"""
+        logging.info("深化询问用户目的地")
+        context_info = self._prepare_context_info()
+        state_info = self.session.state or {}
+        collected_info = self._format_collected_info()
+        
+        # 构建包含用户刚才回答的上下文
+        additional_context = ""
+        if user_input:
+            additional_context = f"\n用户刚才的回答：{user_input}"
+        
+        response = self.chat_service.process_chat(
+            context_info + additional_context, 
+            chat_type="ask_destination_deep",
+            phase=state_info.get('phase', '未知'),
+            intent=state_info.get('intent', '未知'),
+            context=state_info.get('context', '未知'),
+            collected_info=collected_info
+        )
+        response_text = response.get('data', {}).get('content', '请告诉我更多关于您想去的地方的信息。')
+        
+        # 检查大模型是否返回了"END"
+        if response_text.strip().upper() == "END":
+            # 大模型确认了目的地信息，不添加消息到历史记录，直接返回"END"
+            return "END"
+        
+        # 添加助手消息到历史记录
+        self.add_assistant_message(response_text)
+        
+        return response_text
+    
+    def ask_destination_confirm(self, user_input: str = "", *args, **kwargs):
+        """确认目的地信息"""
+        logging.info("确认用户目的地信息")
+        
+        # 硬编码检测用户确认关键词
+        if user_input:
+            confirm_keywords = ['确认', '是的', '对的', '可以', '进入下一阶段']
+            if any(keyword in user_input for keyword in confirm_keywords):
+                logging.info(f"用户确认目的地信息: {user_input}")
+                return "END"
+        
+        context_info = self._prepare_context_info()
+        state_info = self.session.state or {}
+        collected_info = self._format_collected_info()
+        
+        # 构建包含用户刚才回答的上下文
+        additional_context = ""
+        if user_input:
+            additional_context = f"\n用户刚才的回答：{user_input}"
+        
+        response = self.chat_service.process_chat(
+            context_info + additional_context, 
+            chat_type="ask_destination_confirm",
+            phase=state_info.get('phase', '未知'),
+            intent=state_info.get('intent', '未知'),
+            context=state_info.get('context', '未知'),
+            collected_info=collected_info
+        )
+        response_text = response.get('data', {}).get('content', '请确认您的目的地信息。')
+        
+        # 检查大模型是否返回了"END"
+        if response_text.strip().upper() == "END":
+            # 大模型确认了目的地信息，不添加消息到历史记录，直接返回"END"
+            return "END"
         
         # 添加助手消息到历史记录
         self.add_assistant_message(response_text)
@@ -292,12 +387,6 @@ class TravelAssistantFSM:
         
         return response_text
     
-    def handle_dates(self, value, *args, **kwargs):
-        """处理日期信息 - 从session中提取所有槽位信息"""
-        # 从session中提取所有槽位信息
-        self._update_slots_from_session()
-        logging.info("已从session更新所有槽位信息")
-    
     def ask_dates_again(self, user_input: str = "", *args, **kwargs):
         """重新询问日期"""
         logging.info("重新询问用户日期")
@@ -346,12 +435,6 @@ class TravelAssistantFSM:
         self.add_assistant_message(response_text)
         
         return response_text
-    
-    def handle_profile(self, value, *args, **kwargs):
-        """处理用户画像信息 - 从session中提取所有槽位信息"""
-        # 从session中提取所有槽位信息
-        self._update_slots_from_session()
-        logging.info("已从session更新所有槽位信息")
     
     def ask_profile_again(self, user_input: str = "", *args, **kwargs):
         """重新询问用户画像"""
@@ -555,8 +638,12 @@ class TravelAssistantFSM:
         self._update_slots_from_session()
         
         # 检查是否是确认消息
-        if '确认' in text or '正确' in text or '可以' in text:
-            if self._are_all_slots_filled():
+        if any(keyword in text for keyword in ['确认', '正确', '可以', '是的', '对的', '进入下一阶段', '继续', '下一步']):
+            if self.state == 'SLOT_FILLING_DESTINATION_CONFIRM':
+                # 在目的地确认状态下，用户确认了目的地信息
+                self.destination_confirmed()
+                return self.ask_budget()
+            elif self._are_all_slots_filled():
                 if self.state != 'CONFIRMATION':
                     self.machine.set_state('CONFIRMATION')
                     return self.ask_confirmation()
@@ -569,9 +656,50 @@ class TravelAssistantFSM:
         
         if current_state == 'SLOT_FILLING_DESTINATION':
             # 检查用户是否提供了目的地信息
-            if self._has_destination_info(text):
-                # 用户提供了目的地信息，转移到下一个状态
+            if self._has_destination_info(text, check_deep_process=False):
+                # 用户提供了目的地信息，转移到深化询问状态
                 self.user_provides_destination(text)  # type: ignore
+                return self.ask_destination_deep(text)
+            else:
+                # 用户没有提供目的地信息，重新询问
+                self.slot_invalid_destination(text)  # type: ignore
+                return self.ask_destination_again(text)
+                
+        elif current_state == 'SLOT_FILLING_DESTINATION_DEEP':
+            # 深化目的地询问状态
+            if any(keyword in text for keyword in ['确认', '正确', '可以', '是的', '对的', '进入下一阶段', '继续', '下一步', '差不多了', '就这样']):
+                self.destination_deep_complete()
+                return self.ask_destination_confirm()
+            response = self.ask_destination_deep(text)
+            # 检查大模型是否返回了"END"
+            if response == "END":
+                self.destination_deep_complete()
+                return self.ask_destination_confirm()
+            else:
+                self.destination_deep_continue()
+                # 先将LLM回复加入历史
+                self.add_assistant_message(response)
+                # 再基于最新历史做POI搜索
+                try:
+                    from hunter.services.poi_search_pipeline import POISearchPipeline
+                    conversation = self.get_conversation_history()
+                    session_info = self.get_session_info()
+                    pipeline = POISearchPipeline()
+                    result = pipeline.search_by_conversation(conversation, session_info)
+                    self._latest_poi_search_result = result
+                except Exception as e:
+                    logging.error(f"自动POI搜索失败: {e}")
+                    self._latest_poi_search_result = None
+                return response
+                
+        elif current_state == 'SLOT_FILLING_DESTINATION_CONFIRM':
+            # 确认目的地状态
+            response = self.ask_destination_confirm(text)
+            
+            # 检查大模型是否返回了"END"
+            if response == "END":
+                # 大模型确认了目的地信息，转移到下一个状态
+                self.destination_confirmed()
                 # 检查下一个槽位是否已经填充
                 if self._has_budget_info(text):
                     # 预算也已填充，继续检查下一个
@@ -597,10 +725,10 @@ class TravelAssistantFSM:
                     # 预算未填充，转移到预算状态
                     return self.ask_budget()
             else:
-                # 用户没有提供目的地信息，重新询问
-                self.slot_invalid_destination(text)  # type: ignore
-                return self.ask_destination_again(text)
-                
+                # 用户没有确认，继续深化询问
+                self.destination_not_confirmed()
+                return response
+        
         elif current_state == 'SLOT_FILLING_BUDGET':
             # 检查用户是否提供了预算信息
             if self._has_budget_info(text):
@@ -676,18 +804,32 @@ class TravelAssistantFSM:
         next_slot = self._get_next_empty_slot()
         if next_slot:
             # 还有未填充的槽位，转移到对应状态
-            target_state = f"SLOT_FILLING_{next_slot.upper()}"
-            if self.state != target_state:
-                self.machine.set_state(target_state)
-            
-            # 返回对应槽位的询问
             if next_slot == 'destination':
-                return self.ask_destination()
+                # 目的地需要特殊处理，根据当前状态决定下一步
+                if self.state == 'SLOT_FILLING_DESTINATION':
+                    return self.ask_destination()
+                elif self.state == 'SLOT_FILLING_DESTINATION_DEEP':
+                    return self.ask_destination_deep()
+                elif self.state == 'SLOT_FILLING_DESTINATION_CONFIRM':
+                    return self.ask_destination_confirm()
+                else:
+                    # 如果不在目的地相关状态，转移到初始目的地状态
+                    self.machine.set_state('SLOT_FILLING_DESTINATION')
+                    return self.ask_destination()
             elif next_slot == 'budget':
+                target_state = 'SLOT_FILLING_BUDGET'
+                if self.state != target_state:
+                    self.machine.set_state(target_state)
                 return self.ask_budget()
             elif next_slot == 'dates':
+                target_state = 'SLOT_FILLING_DATES'
+                if self.state != target_state:
+                    self.machine.set_state(target_state)
                 return self.ask_dates()
             elif next_slot == 'profile':
+                target_state = 'SLOT_FILLING_PROFILE'
+                if self.state != target_state:
+                    self.machine.set_state(target_state)
                 return self.ask_profile()
         else:
             # 所有槽位都已填充，进入确认状态
@@ -707,12 +849,15 @@ class TravelAssistantFSM:
         self.add_assistant_message(response)
         return response
     
-    def _has_destination_info(self, text: str) -> bool:
+    def _has_destination_info(self, text: str, check_deep_process: bool = True) -> bool:
         """检查用户输入是否包含目的地信息"""
         # 优先检查session中是否已经提取到目的地信息
         if self.session.locations and len(self.session.locations) > 0:
             location = self.session.locations[0]
             if location and str(location).strip():
+                # 如果需要检查深化流程，确保不在深化询问状态
+                if check_deep_process and self.state in ['SLOT_FILLING_DESTINATION_DEEP', 'SLOT_FILLING_DESTINATION_CONFIRM']:
+                    return False
                 return True
         
         # 如果session中没有目的地信息，返回False
@@ -832,22 +977,13 @@ class TravelAssistantFSM:
         else:
             self.slots['profile'] = None
     
-    def _are_all_slots_filled(self) -> bool:
-        """检查所有槽位是否都已填充"""
-        for slot_name, value in self.slots.items():
-            if value is None:
-                return False
-            elif isinstance(value, str) and not value.strip():
-                return False
-            elif isinstance(value, dict) and slot_name == 'dates':
-                # 日期槽位是字典，需要检查start_date和end_date
-                if not value.get('start_date') or not value.get('end_date'):
-                    return False
-        return True
-    
     def _get_next_empty_slot(self) -> Optional[str]:
         """获取下一个未填充的槽位"""
-        for slot in ['destination', 'budget', 'dates', 'profile']:
+        # 检查目的地是否已完成（包括深化询问和确认）
+        if not self._has_destination_info("", check_deep_process=True) or self.state in ['SLOT_FILLING_DESTINATION', 'SLOT_FILLING_DESTINATION_DEEP', 'SLOT_FILLING_DESTINATION_CONFIRM']:
+            return 'destination'
+        
+        for slot in ['budget', 'dates', 'profile']:
             value = self.slots[slot]
             if value is None:
                 return slot
@@ -858,6 +994,26 @@ class TravelAssistantFSM:
                 if not value.get('start_date') or not value.get('end_date'):
                     return slot
         return None
+    
+    def _are_all_slots_filled(self) -> bool:
+        """检查所有槽位是否都已填充"""
+        # 检查目的地是否已完成（包括深化询问和确认）
+        if not self._has_destination_info("", check_deep_process=True) or self.state in ['SLOT_FILLING_DESTINATION', 'SLOT_FILLING_DESTINATION_DEEP', 'SLOT_FILLING_DESTINATION_CONFIRM']:
+            return False
+        
+        for slot_name, value in self.slots.items():
+            if slot_name == 'destination':
+                # 目的地槽位需要特殊处理，确保已经完成深化询问和确认
+                continue
+            if value is None:
+                return False
+            elif isinstance(value, str) and not value.strip():
+                return False
+            elif isinstance(value, dict) and slot_name == 'dates':
+                # 日期槽位是字典，需要检查start_date和end_date
+                if not value.get('start_date') or not value.get('end_date'):
+                    return False
+        return True
     
     # ========== 辅助函数 ==========
     

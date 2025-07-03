@@ -7,6 +7,10 @@ from talker.models import TalkSession
 from talker.api import VivoGPT, VivoGPTError
 import logging
 from datetime import datetime
+from difflib import SequenceMatcher
+from hunter.api.amap_api import AmapPlaceAPI, AmapAPIError
+from chatJourney import settings
+from talker.services.poi_management import POIManagementService
 
 def is_valid_date(date_string):
     """验证日期字符串是否为有效的YYYY-MM-DD格式"""
@@ -43,6 +47,7 @@ def _call_extract(client, prompt_type, history):
 def analyze_and_update_talksession(session: TalkSession):
     """
     并行分析会话历史，综合大模型结果，自动更新 TalkSession 的数据字段（不包含state）。
+    新增：自动将locations逆搜索得到的POI保存到数据库。
     :param session: TalkSession 实例
     :return: (success, message)
     """
@@ -112,7 +117,32 @@ def analyze_and_update_talksession(session: TalkSession):
                 session.budget = budget_value
         else:
             session.budget = None
-        session.locations = result.get("locations") if isinstance(result.get("locations", None), list) else []
+        # ====================  新增：Amap POI 校验 ====================
+        raw_locations = result.get("locations") or []
+        amap_client = AmapPlaceAPI(key=settings.AMAP_KEY)
+        validated_locations = []
+        def _lookup(keyword: str):
+            try:
+                data = amap_client.text_search(keywords=keyword, page_size=1)
+                poi_list = data.get("pois", []) if data else []
+                if not poi_list:
+                    return None
+                return poi_list[0]["name"]
+            except AmapAPIError as e:
+                logging.warning(f"Amap 查询失败（{keyword}）：{e}")
+                return None
+        for loc in raw_locations:
+            official_name = _lookup(loc)
+            if official_name:
+                if not any(SequenceMatcher(None, official_name, l).ratio() > 0.7 for l in validated_locations):
+                    validated_locations.append(official_name)
+        session.locations = validated_locations
+        
+        # ====================  新增：自动保存POI到数据库 ====================
+        poi_service = POIManagementService()
+        added_pois = poi_service.add_poi_from_locations(session)
+        if added_pois:
+            logging.info(f"自动添加了 {len(added_pois)} 个POI到数据库: {added_pois}")
         
         # 日期字段验证
         start_date = result.get("start_date")

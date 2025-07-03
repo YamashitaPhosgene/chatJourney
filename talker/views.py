@@ -10,7 +10,7 @@ import json
 from rest_framework import viewsets, permissions, mixins
 from .models import TalkSession
 from .serializers import TalkSessionSerializer
-from rest_framework.decorators import action, api_view
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from .services.xiaohongshu_summary_service import summary_service
 
@@ -189,68 +189,55 @@ class TalkSessionViewSet(mixins.RetrieveModelMixin,
         session = TalkSession.objects.create(user=request.user)
         return Response({"id": session.id})
 
-@api_view(['POST'])
-def xiaohongshu_summary(request):
-    """小红书内容总结API
+@method_decorator(csrf_exempt, name='dispatch')
+class XiaohongshuSummaryView(View):
+    """小红书内容摘要视图"""
     
-    请求参数:
-    - keyword: 搜索关键词 (必需)
-    - limit: 搜索笔记数量限制 (可选，默认5)
-    - summary_type: 总结类型 (可选，默认general)
-        - general: 通用总结
-        - food: 美食总结
-        - travel: 旅行总结
-        - shopping: 购物总结
-        - beauty: 美妆总结
-    """
-    try:
-        data = request.data
-        keyword = data.get('keyword', '').strip()
+    def __init__(self):
+        self.summary_service = summary_service
+    
+    def post(self, request):
+        """处理小红书内容摘要请求
         
-        if not keyword:
-            return Response({
-                'success': False,
-                'error': '关键词不能为空'
-            }, status=400)
-        
-        limit = int(data.get('limit', 5))
-        summary_type = data.get('summary_type', 'general')
-        
-        # 验证总结类型
-        valid_types = ['general', 'food', 'travel', 'shopping', 'beauty']
-        if summary_type not in valid_types:
-            return Response({
-                'success': False,
-                'error': f'总结类型必须是以下之一: {", ".join(valid_types)}'
-            }, status=400)
-        
-        # 异步调用总结服务
-        import asyncio
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
+        请求体格式：
+        {
+            "keywords": "搜索关键词",
+            "summary_type": "摘要类型（food/travel/shopping/beauty/general）",
+            "limit": 5
+        }
+        """
         try:
-            result = loop.run_until_complete(
-                summary_service.search_and_summarize(keyword, limit, summary_type)
-            )
-        finally:
-            loop.close()
-        
-        if result['success']:
-            return Response(result['data'])
-        else:
-            return Response({
-                'success': False,
-                'error': result.get('error', '未知错误')
-            }, status=500)
+            data = json.loads(request.body)
+            keywords = data.get('keywords')
+            summary_type = data.get('summary_type', 'general')
+            limit = int(data.get('limit', 5))
             
-    except ValueError as e:
-        return Response({
-            'success': False,
-            'error': f'参数错误: {str(e)}'
-        }, status=400)
-    except Exception as e:
-        return Response({
-            'success': False,
-            'error': f'服务器错误: {str(e)}'
-        }, status=500)
+            if not keywords:
+                return JsonResponse({
+                    "error": True,
+                    "message": "搜索关键词不能为空"
+                }, status=400)
+            
+            # 调用摘要服务
+            import asyncio
+            result = asyncio.run(self.summary_service.search_and_summarize(
+                keyword=keywords,
+                summary_type=summary_type,
+                limit=limit
+            ))
+            
+            return JsonResponse(result)
+            
+        except json.JSONDecodeError:
+            return JsonResponse({
+                "error": True,
+                "message": "无效的JSON格式"
+            }, status=400)
+        except Exception as e:
+            return JsonResponse({
+                "error": True,
+                "message": str(e)
+            }, status=500)
+
+# 创建视图实例
+xiaohongshu_summary = XiaohongshuSummaryView.as_view()

@@ -3,6 +3,7 @@ import logging
 from typing import Optional, Dict, Any
 from playwright.async_api import async_playwright, BrowserContext, Page
 from ..config.settings import HunterConfig
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -230,7 +231,7 @@ class BrowserManager:
             
             # 访问帖子链接
             await self.main_page.goto(processed_url, timeout=HunterConfig.BROWSER_TIMEOUT)
-            await asyncio.sleep(10)
+            await asyncio.sleep(3)
             
             # 检查错误页面
             error_page = await self.main_page.evaluate('''
@@ -302,7 +303,6 @@ class BrowserManager:
                 likes_selectors = [
                     'span.like-count',
                     'div.like-count',
-                    'span[data-v-*]',  # 动态属性选择器
                     'div[class*="like"]',
                     'span[class*="like"]',
                     'div[class*="count"]',
@@ -335,8 +335,7 @@ class BrowserManager:
                                 'span.like-count',
                                 'div.like-count',
                                 '[class*="like"]',
-                                '[class*="count"]',
-                                'span[data-v-*]'
+                                '[class*="count"]'
                             ];
                             
                             for (const selector of selectors) {
@@ -360,6 +359,24 @@ class BrowserManager:
                                     const match = text.match(/(\\d+)/);
                                     if (match) {
                                         return parseInt(match[1]);
+                                    }
+                                }
+                            }
+                            
+                            // 尝试查找动态属性中包含数字的元素
+                            const allElements = document.querySelectorAll('*');
+                            for (const el of allElements) {
+                                const text = el.textContent.trim();
+                                if (text && /\\d+/.test(text)) {
+                                    // 检查是否有动态属性
+                                    const hasDynamicAttr = Array.from(el.attributes).some(attr => 
+                                        attr.name.startsWith('data-v-')
+                                    );
+                                    if (hasDynamicAttr) {
+                                        const match = text.match(/(\\d+)/);
+                                        if (match) {
+                                            return parseInt(match[1]);
+                                        }
                                     }
                                 }
                             }
@@ -446,23 +463,45 @@ class BrowserManager:
             # 滚动到评论区
             comment_section_locators = []
             try:
+                # 使用更精确的评论区定位策略
                 comment_section_locators = [
-                    self.main_page.get_by_text("条评论", exact=False),
-                    self.main_page.get_by_text("评论", exact=False),
-                    self.main_page.locator("text=评论").first
+                    # 首先尝试找到评论数量元素
+                    self.main_page.locator('span:has-text("条评论")').first,
+                    self.main_page.locator('span:has-text("评论")').filter(has_text=re.compile(r'\d+')).first,
+                    # 然后尝试找到评论按钮
+                    self.main_page.locator('span:has-text("点击评论")').first,
+                    self.main_page.locator('span:has-text("评论")').filter(has_text="评论").first,
+                    # 最后尝试通用的评论元素
+                    self.main_page.locator('div[class*="comment"]').first,
+                    self.main_page.locator('section[class*="comment"]').first
                 ]
             except Exception as e:
                 logger.error(f"创建评论区定位器时出错: {str(e)}")
             
-            for locator in comment_section_locators:
+            # 尝试滚动到评论区
+            comment_section_found = False
+            for i, locator in enumerate(comment_section_locators):
                 try:
                     if locator and await locator.count() > 0:
-                        await locator.scroll_into_view_if_needed(timeout=5000)
-                        await asyncio.sleep(2)
-                        break
+                        # 检查元素是否可见
+                        if await locator.is_visible():
+                            await locator.scroll_into_view_if_needed(timeout=5000)
+                            await asyncio.sleep(2)
+                            comment_section_found = True
+                            logger.info(f"成功定位到评论区，使用定位器 {i+1}")
+                            break
                 except Exception as e:
-                    logger.error(f"滚动到评论区时出错: {str(e)}")
+                    logger.error(f"滚动到评论区时出错 (定位器 {i+1}): {str(e)}")
                     continue
+            
+            # 如果所有定位器都失败了，尝试简单的页面滚动
+            if not comment_section_found:
+                try:
+                    logger.info("使用页面滚动方式定位评论区")
+                    await self.main_page.evaluate("window.scrollBy(0, 1000)")
+                    await asyncio.sleep(2)
+                except Exception as e:
+                    logger.error(f"页面滚动定位评论区时出错: {str(e)}")
             
             # 滚动页面以加载更多评论
             for i in range(8):

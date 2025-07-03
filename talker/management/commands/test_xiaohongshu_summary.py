@@ -272,31 +272,31 @@ class Command(BaseCommand):
                 {
                     "keyword": "三里屯 咖啡",
                     "limit": 3,
-                    "summary_type": "food",
+                    "summary_type": "poi",
                     "description": "美食类总结"
                 },
                 {
                     "keyword": "北京 旅游",
                     "limit": 3,
-                    "summary_type": "travel",
+                    "summary_type": "poi",
                     "description": "旅行类总结"
                 },
                 {
                     "keyword": "口红 推荐",
                     "limit": 3,
-                    "summary_type": "beauty",
+                    "summary_type": "poi",
                     "description": "美妆类总结"
                 },
                 {
                     "keyword": "手机 购买",
                     "limit": 3,
-                    "summary_type": "shopping",
+                    "summary_type": "poi",
                     "description": "购物类总结"
                 },
                 {
                     "keyword": "健身 减肥",
                     "limit": 3,
-                    "summary_type": "general",
+                    "summary_type": "poi",
                     "description": "通用类总结"
                 }
             ]
