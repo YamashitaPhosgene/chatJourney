@@ -24,6 +24,20 @@ class POIManagementService:
                 logger.warning("POI数据缺少名称或ID")
                 return False
             # 1. 查找或新建POIItem
+            if not poi_data.get('photos') or not poi_data.get('business_area'):
+                try:
+                    detail = self.amap_client.text_search(
+                        keywords=name,
+                        page_size=1,
+                        show_fields="children,business,indoor,navi,photos"
+                    )
+                    pois = detail.get('pois', [])
+                    if pois:
+                        poi_data = pois[0]
+                        poi_data['__amap_raw_response__'] = detail
+                except Exception as e:
+                    logger.warning(f"补全POI show_fields失败: {e}")
+            # 2. 查找或新建POIItem
             poi_item, created = POIItem.objects.get_or_create(
                 poi_id=poi_id,
                 defaults={
@@ -36,7 +50,7 @@ class POIManagementService:
                     'raw_data': poi_data
                 }
             )
-            # 2. 建立会话关联（去重）
+            # 3. 建立会话关联（去重）
             rel, rel_created = POISession.objects.get_or_create(
                 session=session,
                 poi=poi_item,

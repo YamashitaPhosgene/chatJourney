@@ -50,9 +50,11 @@ INSTALLED_APPS = [
     "hunter.apps.HunterConfig",
     "rest_framework",
     "rest_framework.authtoken",
+    "corsheaders",  # 跨域支持
 ]
 
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",  # 需放在最前确保先处理
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -148,3 +150,6 @@ VIVO_APP_KEY = os.getenv('VIVO_APP_KEY')
 
 # 高德地图配置
 AMAP_KEY = os.getenv('AMAP_KEY')
+
+# --- CORS 设置（开发阶段允许全部） ---
+CORS_ALLOW_ALL_ORIGINS = True

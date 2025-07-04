@@ -1,6 +1,8 @@
 # Updated amap_api.py with helper methods added
 
 import requests
+import threading
+import time
 
 class AmapAPIError(Exception):
     """Custom exception for Amap API errors."""
@@ -214,13 +216,26 @@ _AMAP_POI_ALL_FIELDS = ",".join([
 
 class AmapPlaceAPI:
     BASE_URL = "https://restapi.amap.com/v5/place"
+    _last_call = 0
+    _lock = threading.Lock()
+    _min_interval = 0.6  # 默认QPS≤1.6
 
     def __init__(self, key, session=None, timeout=10):
         self.key = key
         self.session = session or requests.Session()
         self.timeout = timeout
 
+    @classmethod
+    def _rate_limit(cls):
+        with cls._lock:
+            now = time.time()
+            wait = cls._last_call + cls._min_interval - now
+            if wait > 0:
+                time.sleep(wait)
+            cls._last_call = time.time()
+
     def _request(self, path, params):
+        self._rate_limit()  # 全局QPS控制
         url = f"{self.BASE_URL}/{path}"
         params.update({"key": self.key})
         resp = self.session.get(url, params=params, timeout=self.timeout)

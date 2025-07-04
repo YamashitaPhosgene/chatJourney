@@ -183,6 +183,9 @@ class CLIService:
             self.fsm = TravelAssistantFSM()
             session_id = self.fsm.create_new_session()
             
+            # 设置POI搜索结果回调
+            self.fsm.set_poi_search_callback(self.print_poi_search_results)
+            
             # 启动状态机并获取初始回复
             self.fsm.start()  # type: ignore  # 使用状态转移而不是直接设置状态
             initial_response = self.fsm.ask_destination()
@@ -203,6 +206,9 @@ class CLIService:
             # 创建状态机实例并加载session
             self.fsm = TravelAssistantFSM()
             if self.fsm.load_session(session_id):
+                # 设置POI搜索结果回调
+                self.fsm.set_poi_search_callback(self.print_poi_search_results)
+                
                 session_info = self.fsm.get_session_info()
                 
                 print(f"\n📂 会话已加载 (ID: {session_id})")
@@ -220,24 +226,77 @@ class CLIService:
             logging.error(f"加载会话失败: {e}")
             return False
     
-    def send_message(self, message: str) -> None:
-        """发送消息给状态机"""
+    def send_message(self, message: str, stream: bool = False) -> None:
+        """发送消息给状态机
+        
+        Args:
+            message: 用户消息
+            stream: 是否使用流式输出
+        """
         if not self.fsm:
             print("❌ 没有活跃的会话，请先创建或加载会话")
             return
         
         try:
-            # 处理用户消息（状态机会自动处理session操作）
-            response = self.fsm.handle_utterance(message)
+            if stream:
+                # 流式处理
+                self._send_message_stream(message)
+            else:
+                # 同步处理
+                response = self.fsm.handle_utterance(message)
+                print(f"\n🤖 {response}")
+                
+                # 显示当前状态信息
+                self._show_current_status()
             
-            print(f"\n🤖 {response}")
+        except Exception as e:
+            print(f"❌ 处理消息失败: {e}")
+            logging.error(f"处理消息失败: {e}")
+    
+    def _send_message_stream(self, message: str) -> None:
+        """流式发送消息给状态机"""
+        print("\n🤖 ", end='', flush=True)
+        
+        try:
+            full_content = ""
+            for chunk in self.fsm.handle_utterance_stream(message):
+                if chunk['type'] == 'content':
+                    # 打印内容块
+                    chunk_text = chunk['chunk']
+                    print(chunk_text, end='', flush=True)
+                    full_content += chunk_text
+                elif chunk['type'] == 'timeline':
+                    # 时间线数据
+                    timeline_content = chunk['content']
+                    trip_id = chunk.get('trip_id')
+                    print(f"\n📅 行程已保存 (ID: {trip_id})")
+                    print(timeline_content)
+                elif chunk['type'] == 'done':
+                    # 流式内容完成
+                    print()  # 换行
+                    break
+                elif chunk['type'] == 'end':
+                    # 状态转换结束
+                    print()  # 换行
+                    break
+                elif chunk['type'] == 'error':
+                    # 错误处理
+                    print(f"\n❌ 错误: {chunk['error']}")
+                    break
+                elif chunk['type'] == 'event':
+                    # 事件处理
+                    print(f"\n📡 事件: {chunk['event']}")
+                elif chunk['type'] == 'completed':
+                    # 完成状态
+                    print(f"\n✅ {chunk['full_content']}")
+                    break
             
             # 显示当前状态信息
             self._show_current_status()
             
         except Exception as e:
-            print(f"❌ 处理消息失败: {e}")
-            logging.error(f"处理消息失败: {e}")
+            print(f"\n❌ 流式处理失败: {e}")
+            logging.error(f"流式处理失败: {e}")
     
     def _show_session_info(self, session_info: Dict[str, Any]) -> None:
         """显示会话信息"""
@@ -274,6 +333,11 @@ class CLIService:
         help_text = """
 🤖 旅行助手命令行服务
 
+🔄 模式切换:
+  /stream        - 切换流式/同步模式
+    ⚡ 同步模式: 等待完整回复后一次性显示
+    🔄 流式模式: 实时显示打字机效果
+
 📝 基本命令:
   /help          - 显示此帮助信息
   /new           - 开始新会话
@@ -294,11 +358,16 @@ class CLIService:
   /detail <序号> - 显示搜索结果POI的高德详情
   /recpoi        - 显示最近一次推荐POI搜索结果（第一页）
 
+🗓️ 行程相关命令:
+  /trips         - 显示用户所有行程
+  /trip <ID>     - 显示指定行程详情
+
 💬 使用说明:
   - 直接输入文本与AI对话
   - 使用 / 开头的命令执行特殊操作
   - POI搜索后可使用 /addpoi 添加到数据库
   - 使用 /pois 查看所有已保存的POI
+  - 使用 /stream 切换流式模式体验打字机效果
         """
         print(help_text)
     
@@ -358,21 +427,33 @@ class CLIService:
         """运行命令行服务"""
         print("🚀 启动旅行助手命令行服务...")
         print("输入 /help 查看帮助信息")
+        print("输入 /stream 切换流式模式")
+        
+        # 默认使用同步模式
+        stream_mode = False
         
         while True:
             try:
-                # 获取用户输入
-                user_input = input("\n💬 请输入消息或命令: ").strip()
+                # 显示当前模式
+                mode_text = "🔄 流式模式" if stream_mode else "⚡ 同步模式"
+                user_input = input(f"\n💬 [{mode_text}] 请输入消息或命令: ").strip()
                 
                 if not user_input:
                     continue
                 
                 # 处理命令
                 if user_input.startswith('/'):
-                    self._handle_command(user_input)
+                    if user_input == '/stream':
+                        # 切换流式模式
+                        stream_mode = not stream_mode
+                        mode_text = "🔄 流式模式" if stream_mode else "⚡ 同步模式"
+                        print(f"✅ 已切换到{mode_text}")
+                        continue
+                    else:
+                        self._handle_command(user_input)
                 else:
                     # 处理普通消息
-                    self.send_message(user_input)
+                    self.send_message(user_input, stream=stream_mode)
                     
             except KeyboardInterrupt:
                 print("\n\n👋 再见！")
@@ -446,6 +527,15 @@ class CLIService:
             self.show_poi_detail_by_index(idx)
         elif cmd == '/recpoi':
             self.show_last_poi_search()
+        elif cmd == '/trips':
+            self.show_user_trips()
+        elif cmd.startswith("/trip"):
+            parts = command.strip().split()
+            if len(parts) != 2 or not parts[1].isdigit():
+                print("用法: /trip <ID>")
+                return
+            trip_id = int(parts[1])
+            self.show_trip_detail(trip_id)
         else:
             print("❌ 未知命令，输入 /help 查看帮助信息")
 
@@ -604,10 +694,95 @@ class CLIService:
 
     def show_last_poi_search(self):
         """展示最近一次POI搜索结果（第一页）"""
+        # 优先从FSM获取最新搜索结果
+        if self.fsm and hasattr(self.fsm, '_latest_poi_search_result') and self.fsm._latest_poi_search_result:
+            self.print_poi_search_results(self.fsm._latest_poi_search_result, page=1)
+            return
+        
+        # 如果FSM中没有，再尝试本地缓存
         if not hasattr(self, "_poi_page_data") or not self._poi_page_data:
             print("未找到POI搜索结果，请先进行一次POI搜索。")
             return
         self.print_poi_search_results(self._poi_page_data["result"], page=1)
+    
+    def show_user_trips(self):
+        """显示用户的所有行程"""
+        if not hasattr(self, "fsm") or not self.fsm.session:
+            print("❌ 没有活跃的会话")
+            return
+        
+        from planner.models import Trip
+        trips = Trip.objects.filter(user=self.fsm.session.user).order_by('-created_at')
+        
+        if not trips:
+            print("❌ 没有找到任何行程")
+            return
+        
+        print("\n🗓️ 用户行程列表:")
+        print("=" * 80)
+        print(f"{'ID':<4} {'标题':<25} {'开始日期':<12} {'结束日期':<12} {'天数':<4} {'状态':<8}")
+        print("-" * 80)
+        
+        for trip in trips:
+            status = "已完成" if trip.is_completed else "进行中"
+            print(f"{trip.id:<4} {trip.title[:23]:<25} {trip.start_date:<12} {trip.end_date:<12} {(trip.end_date - trip.start_date).days + 1:<4} {status:<8}")
+        
+        print("=" * 80)
+        print(f"📊 总计: {trips.count()} 个行程")
+    
+    def show_trip_detail(self, trip_id: int):
+        """显示指定行程的详细信息"""
+        if not hasattr(self, "fsm") or not self.fsm.session:
+            print("❌ 没有活跃的会话")
+            return
+        
+        from planner.models import Trip
+        from planner.services.trip_service import TripService
+        
+        try:
+            trip = Trip.objects.get(id=trip_id, user=self.fsm.session.user)
+        except Trip.DoesNotExist:
+            print(f"❌ 未找到行程 (ID: {trip_id})")
+            return
+        
+        # 生成时间线数据
+        timeline_data = TripService.generate_timeline(trip)
+        
+        print(f"\n📋 行程详情 (ID: {trip_id}):")
+        print("=" * 60)
+        print(f"标题: {trip.title}")
+        print(f"描述: {trip.description}")
+        print(f"开始日期: {trip.start_date}")
+        print(f"结束日期: {trip.end_date}")
+        print(f"总天数: {(trip.end_date - trip.start_date).days + 1}")
+        print(f"状态: {'已完成' if trip.is_completed else '进行中'}")
+        print(f"创建时间: {trip.created_at}")
+        print("-" * 60)
+        
+        # 显示时间线
+        if timeline_data:
+            timeline = timeline_data.get('timeline', [])
+            if timeline:
+                print("📅 详细时间安排:")
+                current_day = None
+                for event in timeline:
+                    day_index = event.get('day_index', 0)
+                    if day_index != current_day:
+                        current_day = day_index
+                        print(f"\n第{day_index}天：")
+                    
+                    event_type = event.get('type', '')
+                    title = event.get('title', '未知活动')
+                    start_time = event.get('start_time', '')
+                    end_time = event.get('end_time', '')
+                    
+                    if event_type == 'activity':
+                        print(f"  📍 {start_time} - {end_time} {title}")
+                    elif event_type in ['departure', 'arrival']:
+                        mode = event.get('mode', '')
+                        print(f"  🚗 {start_time} - {end_time} {title} ({mode})")
+        
+        print("=" * 60)
 
 
 def main():

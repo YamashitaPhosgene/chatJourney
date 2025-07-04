@@ -4,7 +4,7 @@
 # type: ignore
 
 from transitions import Machine
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Generator
 from talker.models import TalkSession
 import logging
 from talker.services.chat_service import ChatService
@@ -61,6 +61,9 @@ class TravelAssistantFSM:
         # 初始化用户画像询问标记
         self._profile_asked_basic = False
         self._profile_asked_again = False
+        
+        # 初始化POI搜索回调
+        self._poi_search_callback = None
     
     def _setup_transitions(self):
         """设置状态转移"""
@@ -122,13 +125,12 @@ class TravelAssistantFSM:
         })
     
     def _on_enter_fill_destination_deep(self, *args, **kwargs):
-        """进入深化目的地询问状态，仅设置状态，不自动搜索POI"""
+        """进入深化目的地询问状态"""
         self._set_session_state({
             "phase": "slot_filling",
             "intent": "fill_destination_deep",
             "context": "深化目的地询问"
         })
-        # 不再自动搜索POI
     
     def _on_enter_fill_destination_confirm(self, *args, **kwargs):
         """进入确认目的地状态"""
@@ -217,6 +219,56 @@ class TravelAssistantFSM:
         
         return response_text
     
+    def ask_destination_stream(self, *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
+        """询问目的地（流式版本）"""
+        logging.info("询问用户目的地（流式）")
+        # 准备上下文信息
+        context_info = self._prepare_context_info()
+        state_info = self.session.state or {}
+        collected_info = self._format_collected_info()
+        
+        full_content = ""
+        try:
+            response_stream = self.chat_service.process_chat(
+                context_info, 
+                chat_type="ask_destination",
+                phase=state_info.get('phase', '未知'),
+                intent=state_info.get('intent', '未知'),
+                context=state_info.get('context', '未知'),
+                collected_info=collected_info,
+                stream=True
+            )
+            
+            for chunk in response_stream:
+                if chunk['type'] == 'content':
+                    full_content += chunk['chunk']
+                    yield {
+                        'type': 'content',
+                        'chunk': chunk['chunk'],
+                        'full_content': full_content
+                    }
+                elif chunk['type'] == 'done':
+                    # 流式内容完成，添加到历史记录
+                    self.add_assistant_message(full_content)
+                    yield {
+                        'type': 'done',
+                        'full_content': full_content
+                    }
+                    return
+                elif chunk['type'] == 'event':
+                    yield chunk
+                    
+        except Exception as e:
+            logging.error(f"流式处理错误: {e}")
+            # 如果流式处理失败，使用默认回复
+            default_response = '您这次想去哪里？'
+            self.add_assistant_message(default_response)
+            yield {
+                'type': 'error',
+                'error': str(e),
+                'full_content': default_response
+            }
+    
     def ask_destination_again(self, user_input: str = "", *args, **kwargs):
         """重新询问目的地"""
         logging.info("重新询问用户目的地")
@@ -273,6 +325,21 @@ class TravelAssistantFSM:
         
         # 添加助手消息到历史记录
         self.add_assistant_message(response_text)
+
+        # 在大模型回复后，自动进行关键词生成和POI搜索，仅缓存结果
+        try:
+            from hunter.services.poi_search_pipeline import POISearchPipeline
+            conversation = self.get_conversation_history()
+            session_info = self.get_session_info()
+            pipeline = POISearchPipeline()
+            result = pipeline.search_by_conversation(conversation, session_info)
+            # 缓存结果并通过回调传递
+            self._latest_poi_search_result = result
+            if self._poi_search_callback:
+                self._poi_search_callback(result)
+        except Exception as e:
+            logging.error(f"自动POI搜索失败: {e}")
+            self._latest_poi_search_result = None
         
         return response_text
     
@@ -534,7 +601,134 @@ class TravelAssistantFSM:
         # 添加助手消息到历史记录
         self.add_assistant_message(response_text)
         
+        # 使用 RouteTimeService 解析行程并保存到数据库
+        try:
+            from planner.services.route_time_service import RouteTimeService
+            from planner.services.trip_service import TripService
+            from datetime import date
+            
+            # 初始化 RouteTimeService
+            route_service = RouteTimeService()
+            
+            # 从会话中获取用户信息
+            user = self.session.user
+            
+            # 从槽位中获取开始日期
+            start_date = None
+            if self.slots.get('dates') and isinstance(self.slots['dates'], dict):
+                start_date_str = self.slots['dates'].get('start_date')
+                if start_date_str:
+                    try:
+                        start_date = date.fromisoformat(start_date_str)
+                    except ValueError:
+                        start_date = date.today()
+            else:
+                start_date = date.today()
+            
+            # 从槽位中获取目的地信息作为城市提示
+            city_hint = None
+            if self.slots.get('destination'):
+                destination = self.slots['destination']
+                if isinstance(destination, list) and destination:
+                    city_hint = destination[0]  # 使用第一个目的地作为城市提示
+                elif isinstance(destination, str):
+                    city_hint = destination
+            
+            # 生成行程标题
+            trip_title = f"AI规划行程_{self.session.id}"
+            if self.slots.get('destination'):
+                dest_str = str(self.slots['destination'])
+                trip_title = f"{dest_str}之旅"
+            
+            # 生成行程描述
+            trip_description = "AI智能规划的个性化旅行行程"
+            if self.slots.get('profile'):
+                profile = self.slots['profile']
+                if isinstance(profile, dict):
+                    interests = profile.get('兴趣爱好', [])
+                    if interests:
+                        trip_description = f"适合{', '.join(interests)}爱好者的个性化行程"
+            
+            # 保存行程到数据库
+            trip = route_service.save_plan_to_db(
+                plan_text=response_text,
+                user=user,
+                trip_title=trip_title,
+                trip_description=trip_description,
+                city_hint=city_hint,
+                start_date=start_date
+            )
+            
+            logging.info(f"行程已保存到数据库，Trip ID: {trip.id}")
+            
+            # 使用 TripService 生成时间线
+            timeline_data = TripService.generate_timeline(trip)
+            
+            # 将时间线数据添加到回复中
+            timeline_summary = self._format_timeline_summary(timeline_data)
+            response_text += f"\n\n📅 详细时间安排：\n{timeline_summary}"
+            
+            # 更新会话状态，记录已保存的行程ID
+            if not self.session.state:
+                self.session.state = {}
+            self.session.state['saved_trip_id'] = trip.id
+            self.session.save()
+            
+        except Exception as e:
+            logging.error(f"保存行程到数据库失败: {e}")
+            response_text += "\n\n⚠️ 行程已生成，但保存到数据库时遇到问题。"
+        
         return response_text
+    
+    def _format_timeline_summary(self, timeline_data: Dict[str, Any]) -> str:
+        """格式化时间线摘要，增强交通方式 emoji 映射"""
+        if not timeline_data:
+            return "暂无时间安排"
+        summary_parts = []
+        # 行程基本信息
+        trip_info = timeline_data.get('trip', {})
+        if trip_info:
+            summary_parts.append(f"🗓️ 行程：{trip_info.get('title', '未知')}")
+            summary_parts.append(f"📅 日期：{trip_info.get('start_date', '')} 至 {trip_info.get('end_date', '')}")
+            summary_parts.append(f"⏱️ 总天数：{trip_info.get('total_days', 0)} 天")
+        # 交通方式 emoji 映射
+        TRANSPORT_EMOJI = {
+            "步行": "🚶",
+            "walking": "🚶",
+            "骑行": "🚴",
+            "bicycling": "🚴",
+            "打车": "🚗",
+            "驾车": "🚗",
+            "driving": "🚗",
+            "公交": "🚌",
+            "transit": "🚌",
+            "地铁": "🚇",
+            "高铁": "🚄",
+            "火车": "🚄",
+            "飞机": "✈️",
+            "other": "🚙"
+        }
+        # 每日安排
+        timeline = timeline_data.get('timeline', [])
+        if timeline:
+            summary_parts.append("\n📋 每日安排：")
+            current_day = None
+            for event in timeline:
+                day_index = event.get('day_index', 0)
+                if day_index != current_day:
+                    current_day = day_index
+                    summary_parts.append(f"\n第{day_index}天：")
+                event_type = event.get('type', '')
+                title = event.get('title', '未知活动')
+                start_time = event.get('start_time', '')
+                end_time = event.get('end_time', '')
+                if event_type == 'activity':
+                    summary_parts.append(f"  📍 {start_time} - {end_time} {title}")
+                elif event_type in ['departure', 'arrival']:
+                    mode = event.get('mode', '')
+                    emoji = TRANSPORT_EMOJI.get(mode, "🚙")
+                    summary_parts.append(f"  {emoji} {start_time} - {end_time} {title} ({mode})")
+        return "\n".join(summary_parts)
     
     def cancel_flow(self, *args, **kwargs):
         """取消流程"""
@@ -667,29 +861,22 @@ class TravelAssistantFSM:
                 
         elif current_state == 'SLOT_FILLING_DESTINATION_DEEP':
             # 深化目的地询问状态
+            # 首先检查用户是否表达了确认或进入下一阶段的意图
             if any(keyword in text for keyword in ['确认', '正确', '可以', '是的', '对的', '进入下一阶段', '继续', '下一步', '差不多了', '就这样']):
+                # 用户表达了确认意图，转移到确认状态
                 self.destination_deep_complete()
                 return self.ask_destination_confirm()
+            
             response = self.ask_destination_deep(text)
+            
             # 检查大模型是否返回了"END"
             if response == "END":
+                # 大模型确认了目的地信息，转移到确认状态
                 self.destination_deep_complete()
                 return self.ask_destination_confirm()
             else:
+                # 继续深化询问
                 self.destination_deep_continue()
-                # 先将LLM回复加入历史
-                self.add_assistant_message(response)
-                # 再基于最新历史做POI搜索
-                try:
-                    from hunter.services.poi_search_pipeline import POISearchPipeline
-                    conversation = self.get_conversation_history()
-                    session_info = self.get_session_info()
-                    pipeline = POISearchPipeline()
-                    result = pipeline.search_by_conversation(conversation, session_info)
-                    self._latest_poi_search_result = result
-                except Exception as e:
-                    logging.error(f"自动POI搜索失败: {e}")
-                    self._latest_poi_search_result = None
                 return response
                 
         elif current_state == 'SLOT_FILLING_DESTINATION_CONFIRM':
@@ -799,6 +986,19 @@ class TravelAssistantFSM:
                 else:
                     # 已经询问过基础信息，进行深化询问
                     return self.ask_profile_extend(text)
+        
+        # 特殊处理INIT状态
+        if current_state == 'INIT':
+            # 首次对话，强制进入目的地询问流程
+            self.machine.set_state('SLOT_FILLING_DESTINATION')
+            # 检查用户输入是否已经包含目的地信息
+            if self._has_destination_info(text, check_deep_process=False):
+                # 用户提供了目的地信息，转移到深化询问状态
+                self.user_provides_destination(text)  # type: ignore
+                return self.ask_destination_deep(text)
+            else:
+                # 用户没有提供目的地信息，询问目的地
+                return self.ask_destination()
         
         # 如果不在槽位填充状态，找下一个未填槽位
         next_slot = self._get_next_empty_slot()
@@ -921,9 +1121,18 @@ class TravelAssistantFSM:
         """从 session 数据更新槽位"""
         # 更新目的地
         if self.session.locations and len(self.session.locations) > 0:
-            location = self.session.locations[0]
-            if location and str(location).strip():
-                self.slots['destination'] = str(location) if isinstance(location, str) else str(location)
+            # 处理多个目的地的情况
+            valid_locations = []
+            for location in self.session.locations:
+                if location and str(location).strip():
+                    valid_locations.append(str(location))
+            
+            if valid_locations:
+                if len(valid_locations) == 1:
+                    self.slots['destination'] = valid_locations[0]
+                else:
+                    # 多个目的地用"、"连接
+                    self.slots['destination'] = "、".join(valid_locations)
             else:
                 self.slots['destination'] = None
         else:
@@ -1212,4 +1421,982 @@ class TravelAssistantFSM:
         if self.slots['profile']:
             collected.append(f"用户画像: {self.slots['profile']}")
         
-        return collected 
+        return collected
+    
+    def set_poi_search_callback(self, callback):
+        """设置POI搜索结果回调函数"""
+        self._poi_search_callback = callback
+
+    def get_latest_poi_search_result(self) -> Optional[Dict[str, Any]]:
+        """获取最近一次POI搜索结果"""
+        if hasattr(self, '_latest_poi_search_result'):
+            return self._latest_poi_search_result
+        return None
+    
+    # ========== 流式处理方法 ==========
+    
+    def _process_stream_response(self, response_stream, default_response: str, check_end: bool = False) -> Generator[Dict[str, Any], None, None]:
+        """通用流式响应处理方法
+        
+        Args:
+            response_stream: 流式响应流
+            default_response: 默认响应文本
+            check_end: 是否检查END标记
+        """
+        full_content = ""
+        try:
+            for chunk in response_stream:
+                if chunk['type'] == 'content':
+                    full_content += chunk['chunk']
+                    
+                    # 如果需要检查END标记
+                    if check_end and full_content.strip().upper() == "END":
+                        yield {
+                            'type': 'end',
+                            'full_content': full_content
+                        }
+                        return
+                    
+                    yield {
+                        'type': 'content',
+                        'chunk': chunk['chunk'],
+                        'full_content': full_content
+                    }
+                elif chunk['type'] == 'done':
+                    # 如果需要检查END标记
+                    if check_end and full_content.strip().upper() == "END":
+                        yield {
+                            'type': 'end',
+                            'full_content': full_content
+                        }
+                        return
+                    
+                    # 流式内容完成，添加到历史记录
+                    self.add_assistant_message(full_content)
+                    yield {
+                        'type': 'done',
+                        'full_content': full_content
+                    }
+                    return
+                elif chunk['type'] == 'event':
+                    yield chunk
+                    
+        except Exception as e:
+            logging.error(f"流式处理错误: {e}")
+            # 如果流式处理失败，使用默认回复
+            self.add_assistant_message(default_response)
+            yield {
+                'type': 'error',
+                'error': str(e),
+                'full_content': default_response
+            }
+    
+    def ask_destination_again_stream(self, user_input: str = "", *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
+        """重新询问目的地（流式版本）"""
+        logging.info("重新询问用户目的地（流式）")
+        context_info = self._prepare_context_info()
+        state_info = self.session.state or {}
+        collected_info = self._format_collected_info()
+        
+        # 构建包含用户刚才回答的上下文
+        additional_context = ""
+        if user_input:
+            additional_context = f"\n用户刚才的回答：{user_input}\n注意：用户刚才的回答中没有明确的目的地信息，请重新引导用户说明想去的地方。"
+        
+        try:
+            response_stream = self.chat_service.process_chat(
+                context_info + additional_context, 
+                chat_type="ask_destination_again",
+                phase=state_info.get('phase', '未知'),
+                intent=state_info.get('intent', '未知'),
+                context=state_info.get('context', '未知'),
+                collected_info=collected_info,
+                stream=True
+            )
+            
+            yield from self._process_stream_response(response_stream, '请重新告诉我您的目的地。', check_end=True)
+            
+        except Exception as e:
+            logging.error(f"流式处理错误: {e}")
+            default_response = '请重新告诉我您的目的地。'
+            self.add_assistant_message(default_response)
+            yield {
+                'type': 'error',
+                'error': str(e),
+                'full_content': default_response
+            }
+    
+    def ask_destination_deep_stream(self, user_input: str = "", *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
+        """深化询问目的地（流式版本）"""
+        logging.info("深化询问用户目的地（流式）")
+        context_info = self._prepare_context_info()
+        state_info = self.session.state or {}
+        collected_info = self._format_collected_info()
+        
+        # 构建包含用户刚才回答的上下文
+        additional_context = ""
+        if user_input:
+            additional_context = f"\n用户刚才的回答：{user_input}"
+        
+        try:
+            response_stream = self.chat_service.process_chat(
+                context_info + additional_context, 
+                chat_type="ask_destination_deep",
+                phase=state_info.get('phase', '未知'),
+                intent=state_info.get('intent', '未知'),
+                context=state_info.get('context', '未知'),
+                collected_info=collected_info,
+                stream=True
+            )
+            
+            full_content = ""
+            for chunk in response_stream:
+                if chunk['type'] == 'content':
+                    full_content += chunk['chunk']
+                    
+                    # 检查大模型是否返回了"END"
+                    if full_content.strip().upper() == "END":
+                        yield {
+                            'type': 'end',
+                            'full_content': full_content
+                        }
+                        return
+                    
+                    yield {
+                        'type': 'content',
+                        'chunk': chunk['chunk'],
+                        'full_content': full_content
+                    }
+                elif chunk['type'] == 'done':
+                    # 再次检查大模型是否返回了"END"（以防万一）
+                    if full_content.strip().upper() == "END":
+                        yield {
+                            'type': 'end',
+                            'full_content': full_content
+                        }
+                        return
+                    
+                    # 流式内容完成，添加到历史记录
+                    self.add_assistant_message(full_content)
+                    yield {
+                        'type': 'done',
+                        'full_content': full_content
+                    }
+                    
+                    # 在大模型回复后，自动进行关键词生成和POI搜索，仅缓存结果
+                    try:
+                        from hunter.services.poi_search_pipeline import POISearchPipeline
+                        conversation = self.get_conversation_history()
+                        session_info = self.get_session_info()
+                        pipeline = POISearchPipeline()
+                        result = pipeline.search_by_conversation(conversation, session_info)
+                        # 缓存结果并通过回调传递
+                        self._latest_poi_search_result = result
+                        if self._poi_search_callback:
+                            self._poi_search_callback(result)
+                    except Exception as e:
+                        logging.error(f"自动POI搜索失败: {e}")
+                        self._latest_poi_search_result = None
+                    
+                    return
+                elif chunk['type'] == 'event':
+                    yield chunk
+                    
+        except Exception as e:
+            logging.error(f"流式处理错误: {e}")
+            default_response = '请告诉我更多关于您想去的地方的信息。'
+            self.add_assistant_message(default_response)
+            yield {
+                'type': 'error',
+                'error': str(e),
+                'full_content': default_response
+            }
+    
+    def ask_destination_confirm_stream(self, user_input: str = "", *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
+        """确认目的地信息（流式版本）"""
+        logging.info("确认用户目的地信息（流式）")
+        
+        # 硬编码检测用户确认关键词
+        if user_input:
+            confirm_keywords = ['确认', '是的', '对的', '可以', '进入下一阶段']
+            if any(keyword in user_input for keyword in confirm_keywords):
+                logging.info(f"用户确认目的地信息: {user_input}")
+                yield {
+                    'type': 'end',
+                    'full_content': 'END'
+                }
+                return
+        
+        context_info = self._prepare_context_info()
+        state_info = self.session.state or {}
+        collected_info = self._format_collected_info()
+        
+        # 构建包含用户刚才回答的上下文
+        additional_context = ""
+        if user_input:
+            additional_context = f"\n用户刚才的回答：{user_input}"
+        
+        try:
+            response_stream = self.chat_service.process_chat(
+                context_info + additional_context, 
+                chat_type="ask_destination_confirm",
+                phase=state_info.get('phase', '未知'),
+                intent=state_info.get('intent', '未知'),
+                context=state_info.get('context', '未知'),
+                collected_info=collected_info,
+                stream=True
+            )
+            
+            full_content = ""
+            for chunk in response_stream:
+                if chunk['type'] == 'content':
+                    full_content += chunk['chunk']
+                    
+                    # 检查大模型是否返回了"END"
+                    if full_content.strip().upper() == "END":
+                        yield {
+                            'type': 'end',
+                            'full_content': full_content
+                        }
+                        return
+                    
+                    yield {
+                        'type': 'content',
+                        'chunk': chunk['chunk'],
+                        'full_content': full_content
+                    }
+                elif chunk['type'] == 'done':
+                    # 再次检查大模型是否返回了"END"（以防万一）
+                    if full_content.strip().upper() == "END":
+                        yield {
+                            'type': 'end',
+                            'full_content': full_content
+                        }
+                        return
+                    
+                    # 流式内容完成，添加到历史记录
+                    self.add_assistant_message(full_content)
+                    yield {
+                        'type': 'done',
+                        'full_content': full_content
+                    }
+                    return
+                elif chunk['type'] == 'event':
+                    yield chunk
+                    
+        except Exception as e:
+            logging.error(f"流式处理错误: {e}")
+            default_response = '请确认您的目的地信息。'
+            self.add_assistant_message(default_response)
+            yield {
+                'type': 'error',
+                'error': str(e),
+                'full_content': default_response
+            }
+    
+    def ask_budget_stream(self, *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
+        """询问预算（流式版本）"""
+        logging.info("询问用户预算（流式）")
+        context_info = self._prepare_context_info()
+        state_info = self.session.state or {}
+        collected_info = self._format_collected_info()
+        
+        try:
+            response_stream = self.chat_service.process_chat(
+                context_info, 
+                chat_type="ask_budget",
+                phase=state_info.get('phase', '未知'),
+                intent=state_info.get('intent', '未知'),
+                context=state_info.get('context', '未知'),
+                collected_info=collected_info,
+                stream=True
+            )
+            
+            yield from self._process_stream_response(response_stream, '您的预算大概是多少？')
+            
+        except Exception as e:
+            logging.error(f"流式处理错误: {e}")
+            default_response = '您的预算大概是多少？'
+            self.add_assistant_message(default_response)
+            yield {
+                'type': 'error',
+                'error': str(e),
+                'full_content': default_response
+            }
+    
+    def ask_budget_again_stream(self, user_input: str = "", *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
+        """重新询问预算（流式版本）"""
+        logging.info("重新询问用户预算（流式）")
+        context_info = self._prepare_context_info()
+        state_info = self.session.state or {}
+        collected_info = self._format_collected_info()
+        
+        # 构建包含用户刚才回答的上下文
+        additional_context = ""
+        if user_input:
+            additional_context = f"\n用户刚才的回答：{user_input}\n注意：用户刚才的回答中没有明确的预算信息，请重新引导用户说明预算。"
+        
+        try:
+            response_stream = self.chat_service.process_chat(
+                context_info + additional_context, 
+                chat_type="ask_budget_again",
+                phase=state_info.get('phase', '未知'),
+                intent=state_info.get('intent', '未知'),
+                context=state_info.get('context', '未知'),
+                collected_info=collected_info,
+                stream=True
+            )
+            
+            yield from self._process_stream_response(response_stream, '请重新告诉我您的预算。')
+            
+        except Exception as e:
+            logging.error(f"流式处理错误: {e}")
+            default_response = '请重新告诉我您的预算。'
+            self.add_assistant_message(default_response)
+            yield {
+                'type': 'error',
+                'error': str(e),
+                'full_content': default_response
+            }
+    
+    def ask_dates_stream(self, *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
+        """询问日期（流式版本）"""
+        logging.info("询问用户日期（流式）")
+        context_info = self._prepare_context_info()
+        state_info = self.session.state or {}
+        collected_info = self._format_collected_info()
+        
+        try:
+            response_stream = self.chat_service.process_chat(
+                context_info, 
+                chat_type="ask_dates",
+                phase=state_info.get('phase', '未知'),
+                intent=state_info.get('intent', '未知'),
+                context=state_info.get('context', '未知'),
+                collected_info=collected_info,
+                stream=True
+            )
+            
+            yield from self._process_stream_response(response_stream, '您计划什么时候出发、什么时候回来？')
+            
+        except Exception as e:
+            logging.error(f"流式处理错误: {e}")
+            default_response = '您计划什么时候出发、什么时候回来？'
+            self.add_assistant_message(default_response)
+            yield {
+                'type': 'error',
+                'error': str(e),
+                'full_content': default_response
+            }
+    
+    def ask_dates_again_stream(self, user_input: str = "", *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
+        """重新询问日期（流式版本）"""
+        logging.info("重新询问用户日期（流式）")
+        context_info = self._prepare_context_info()
+        state_info = self.session.state or {}
+        collected_info = self._format_collected_info()
+        
+        # 构建包含用户刚才回答的上下文
+        additional_context = ""
+        if user_input:
+            additional_context = f"\n用户刚才的回答：{user_input}\n注意：用户刚才的回答中没有明确的日期信息，请重新引导用户说明出发和返回日期。"
+        
+        try:
+            response_stream = self.chat_service.process_chat(
+                context_info + additional_context, 
+                chat_type="ask_dates_again",
+                phase=state_info.get('phase', '未知'),
+                intent=state_info.get('intent', '未知'),
+                context=state_info.get('context', '未知'),
+                collected_info=collected_info,
+                stream=True
+            )
+            
+            yield from self._process_stream_response(response_stream, '请重新告诉我您的出发和返回日期。')
+            
+        except Exception as e:
+            logging.error(f"流式处理错误: {e}")
+            default_response = '请重新告诉我您的出发和返回日期。'
+            self.add_assistant_message(default_response)
+            yield {
+                'type': 'error',
+                'error': str(e),
+                'full_content': default_response
+            }
+    
+    def ask_profile_stream(self, *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
+        """询问用户画像（流式版本）"""
+        logging.info("询问用户画像（流式）")
+        context_info = self._prepare_context_info()
+        state_info = self.session.state or {}
+        collected_info = self._format_collected_info()
+        
+        try:
+            response_stream = self.chat_service.process_chat(
+                context_info, 
+                chat_type="ask_profile",
+                phase=state_info.get('phase', '未知'),
+                intent=state_info.get('intent', '未知'),
+                context=state_info.get('context', '未知'),
+                collected_info=collected_info,
+                stream=True
+            )
+            
+            yield from self._process_stream_response(response_stream, '请告诉我您的同行人员和旅行偏好。')
+            
+        except Exception as e:
+            logging.error(f"流式处理错误: {e}")
+            default_response = '请告诉我您的同行人员和旅行偏好。'
+            self.add_assistant_message(default_response)
+            yield {
+                'type': 'error',
+                'error': str(e),
+                'full_content': default_response
+            }
+    
+    def ask_profile_again_stream(self, user_input: str = "", *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
+        """重新询问用户画像（流式版本）"""
+        logging.info("重新询问用户画像（流式）")
+        context_info = self._prepare_context_info()
+        state_info = self.session.state or {}
+        collected_info = self._format_collected_info()
+        
+        # 构建包含用户刚才回答的上下文
+        additional_context = ""
+        if user_input:
+            additional_context = f"\n用户刚才的回答：{user_input}\n注意：用户刚才的回答中缺少一些信息，请自然地引导用户提供更多关于同行人员和旅行偏好的信息。"
+        
+        try:
+            response_stream = self.chat_service.process_chat(
+                context_info + additional_context, 
+                chat_type="ask_profile_again",
+                phase=state_info.get('phase', '未知'),
+                intent=state_info.get('intent', '未知'),
+                context=state_info.get('context', '未知'),
+                collected_info=collected_info,
+                stream=True
+            )
+            
+            yield from self._process_stream_response(response_stream, '请重新告诉我您的同行人员和旅行偏好。')
+            
+        except Exception as e:
+            logging.error(f"流式处理错误: {e}")
+            default_response = '请重新告诉我您的同行人员和旅行偏好。'
+            self.add_assistant_message(default_response)
+            yield {
+                'type': 'error',
+                'error': str(e),
+                'full_content': default_response
+            }
+    
+    def ask_profile_extend_stream(self, user_input: str = "", *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
+        """深化询问用户画像（流式版本）"""
+        logging.info("深化询问用户画像（流式）")
+        context_info = self._prepare_context_info()
+        state_info = self.session.state or {}
+        collected_info = self._format_collected_info()
+        
+        # 构建包含用户刚才回答的上下文
+        additional_context = ""
+        if user_input:
+            additional_context = f"\n用户刚才的回答：{user_input}\n任务：根据用户的回答，进行纵向和横向拓展询问。纵向：深入询问用户提到的具体偏好（如具体的美食类型、具体的文化景点等）。横向：询问用户未提及但相关的信息（如年龄、职业、特殊需求等）。"
+        
+        try:
+            response_stream = self.chat_service.process_chat(
+                context_info + additional_context, 
+                chat_type="ask_profile_extend",
+                phase=state_info.get('phase', '未知'),
+                intent=state_info.get('intent', '未知'),
+                context=state_info.get('context', '未知'),
+                collected_info=collected_info,
+                stream=True
+            )
+            
+            yield from self._process_stream_response(response_stream, '请告诉我更多关于您的旅行偏好。', check_end=True)
+            
+        except Exception as e:
+            logging.error(f"流式处理错误: {e}")
+            default_response = '请告诉我更多关于您的旅行偏好。'
+            self.add_assistant_message(default_response)
+            yield {
+                'type': 'error',
+                'error': str(e),
+                'full_content': default_response
+            }
+    
+    def ask_confirmation_stream(self, *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
+        """询问确认（流式版本）"""
+        summary = self._generate_summary()
+        logging.info("询问用户确认信息（流式）")
+        context_info = self._prepare_context_info(summary=summary)
+        state_info = self.session.state or {}
+        collected_info = self._format_collected_info()
+        
+        try:
+            response_stream = self.chat_service.process_chat(
+                context_info, 
+                chat_type="ask_confirmation",
+                phase=state_info.get('phase', '未知'),
+                intent=state_info.get('intent', '未知'),
+                context=state_info.get('context', '未知'),
+                collected_info=collected_info,
+                summary=summary,
+                stream=True
+            )
+            
+            yield from self._process_stream_response(response_stream, f'请确认以下信息是否都正确：\n{summary}\n如无误，请回复"确认"。')
+            
+        except Exception as e:
+            logging.error(f"流式处理错误: {e}")
+            default_response = f'请确认以下信息是否都正确：\n{summary}\n如无误，请回复"确认"。'
+            self.add_assistant_message(default_response)
+            yield {
+                'type': 'error',
+                'error': str(e),
+                'full_content': default_response
+            }
+    
+    def show_plan_stream(self, *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
+        """显示计划（流式版本）"""
+        logging.info("显示旅行计划（流式）")
+        context_info = self._prepare_context_info()
+        state_info = self.session.state or {}
+        collected_info = self._format_collected_info()
+        
+        full_response = ""
+        
+        try:
+            response_stream = self.chat_service.process_chat(
+                context_info, 
+                chat_type="show_plan",
+                phase=state_info.get('phase', '未知'),
+                intent=state_info.get('intent', '未知'),
+                context=state_info.get('context', '未知'),
+                collected_info=collected_info,
+                stream=True
+            )
+            
+            # 收集完整的响应内容
+            for chunk in self._process_stream_response(response_stream, '好的，正在为您生成行程方案…'):
+                if chunk.get('type') == 'content':
+                    full_response += chunk.get('chunk', '')
+                yield chunk
+            
+            # 添加助手消息到历史记录
+            self.add_assistant_message(full_response)
+            
+            # 使用 RouteTimeService 解析行程并保存到数据库
+            try:
+                from planner.services.route_time_service import RouteTimeService
+                from planner.services.trip_service import TripService
+                from datetime import date
+                
+                # 初始化 RouteTimeService
+                route_service = RouteTimeService()
+                
+                # 从会话中获取用户信息
+                user = self.session.user
+                
+                # 从槽位中获取开始日期
+                start_date = None
+                if self.slots.get('dates') and isinstance(self.slots['dates'], dict):
+                    start_date_str = self.slots['dates'].get('start_date')
+                    if start_date_str:
+                        try:
+                            start_date = date.fromisoformat(start_date_str)
+                        except ValueError:
+                            start_date = date.today()
+                else:
+                    start_date = date.today()
+                
+                # 从槽位中获取目的地信息作为城市提示
+                city_hint = None
+                if self.slots.get('destination'):
+                    destination = self.slots['destination']
+                    if isinstance(destination, list) and destination:
+                        city_hint = destination[0]  # 使用第一个目的地作为城市提示
+                    elif isinstance(destination, str):
+                        city_hint = destination
+                
+                # 生成行程标题
+                trip_title = f"AI规划行程_{self.session.id}"
+                if self.slots.get('destination'):
+                    dest_str = str(self.slots['destination'])
+                    trip_title = f"{dest_str}之旅"
+                
+                # 生成行程描述
+                trip_description = "AI智能规划的个性化旅行行程"
+                if self.slots.get('profile'):
+                    profile = self.slots['profile']
+                    if isinstance(profile, dict):
+                        interests = profile.get('兴趣爱好', [])
+                        if interests:
+                            trip_description = f"适合{', '.join(interests)}爱好者的个性化行程"
+                
+                # 保存行程到数据库
+                trip = route_service.save_plan_to_db(
+                    plan_text=full_response,
+                    user=user,
+                    trip_title=trip_title,
+                    trip_description=trip_description,
+                    city_hint=city_hint,
+                    start_date=start_date
+                )
+                
+                logging.info(f"行程已保存到数据库，Trip ID: {trip.id}")
+                
+                # 使用 TripService 生成时间线
+                timeline_data = TripService.generate_timeline(trip)
+                
+                # 将时间线数据添加到回复中
+                timeline_summary = self._format_timeline_summary(timeline_data)
+                timeline_response = f"\n\n📅 详细时间安排：\n{timeline_summary}"
+                
+                # 更新会话状态，记录已保存的行程ID
+                if not self.session.state:
+                    self.session.state = {}
+                self.session.state['saved_trip_id'] = trip.id
+                self.session.save()
+                
+                # 流式输出时间线
+                yield {
+                    'type': 'timeline',
+                    'content': timeline_response,
+                    'trip_id': trip.id
+                }
+                
+            except Exception as e:
+                logging.error(f"保存行程到数据库失败: {e}")
+                error_response = "\n\n⚠️ 行程已生成，但保存到数据库时遇到问题。"
+                yield {
+                    'type': 'error',
+                    'content': error_response,
+                    'error': str(e)
+                }
+            
+        except Exception as e:
+            logging.error(f"流式处理错误: {e}")
+            default_response = '好的，正在为您生成行程方案…'
+            self.add_assistant_message(default_response)
+            yield {
+                'type': 'error',
+                'error': str(e),
+                'full_content': default_response
+            }
+    
+    def cancel_flow_stream(self, *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
+        """取消流程（流式版本）"""
+        logging.info("用户取消流程（流式）")
+        context_info = self._prepare_context_info()
+        state_info = self.session.state or {}
+        collected_info = self._format_collected_info()
+        
+        try:
+            response_stream = self.chat_service.process_chat(
+                context_info, 
+                chat_type="cancel_flow",
+                phase=state_info.get('phase', '未知'),
+                intent=state_info.get('intent', '未知'),
+                context=state_info.get('context', '未知'),
+                collected_info=collected_info,
+                stream=True
+            )
+            
+            yield from self._process_stream_response(response_stream, '好的，已取消当前流程。')
+            
+        except Exception as e:
+            logging.error(f"流式处理错误: {e}")
+            default_response = '好的，已取消当前流程。'
+            self.add_assistant_message(default_response)
+            yield {
+                'type': 'error',
+                'error': str(e),
+                'full_content': default_response
+            }
+    
+    def error_handler_stream(self, *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
+        """错误处理（流式版本）"""
+        logging.info("处理错误（流式）")
+        context_info = self._prepare_context_info()
+        state_info = self.session.state or {}
+        collected_info = self._format_collected_info()
+        
+        try:
+            response_stream = self.chat_service.process_chat(
+                context_info, 
+                chat_type="error_handler",
+                phase=state_info.get('phase', '未知'),
+                intent=state_info.get('intent', '未知'),
+                context=state_info.get('context', '未知'),
+                collected_info=collected_info,
+                stream=True
+            )
+            
+            yield from self._process_stream_response(response_stream, '抱歉，我遇到了一些问题，请重新开始。')
+            
+        except Exception as e:
+            logging.error(f"流式处理错误: {e}")
+            default_response = '抱歉，我遇到了一些问题，请重新开始。'
+            self.add_assistant_message(default_response)
+            yield {
+                'type': 'error',
+                'error': str(e),
+                'full_content': default_response
+            }
+    
+    # ========== 流式统一处理入口 ==========
+    
+    def handle_utterance_stream(self, text: str) -> Generator[Dict[str, Any], None, None]:
+        """统一入口：处理用户话语，返回流式回复内容"""
+        if not self.session:
+            raise ValueError("没有活跃的会话")
+        
+        # 添加用户消息到历史记录
+        self.add_user_message(text)
+        
+        # 分析会话历史并更新 TalkSession
+        success, analysis_msg = analyze_and_update_talksession(self.session)
+        if not success:
+            logging.warning(f"会话分析警告: {analysis_msg}")
+        
+        # 更新槽位数据（从session_control分析后的数据）
+        self._update_slots_from_session()
+        
+        # 检查是否是确认消息
+        if any(keyword in text for keyword in ['确认', '正确', '可以', '是的', '对的', '进入下一阶段', '继续', '下一步', '差不多了', '就这样']):
+            if self.state == 'SLOT_FILLING_DESTINATION_CONFIRM':
+                # 在目的地确认状态下，用户确认了目的地信息
+                self.destination_confirmed()
+                yield from self.ask_budget_stream()
+                return
+            elif self._are_all_slots_filled():
+                if self.state != 'CONFIRMATION':
+                    self.machine.set_state('CONFIRMATION')
+                    yield from self.ask_confirmation_stream()
+                    return
+                else:
+                    self.confirm()
+                    yield from self.show_plan_stream()
+                    return
+        
+        # 基于当前状态和用户输入判断是否回答了当前问题
+        current_state = self.state
+        
+        # 基于当前状态和用户输入判断是否回答了当前问题
+        if current_state == 'SLOT_FILLING_DESTINATION':
+            # 检查用户是否提供了目的地信息
+            if self._has_destination_info(text, check_deep_process=False):
+                # 用户提供了目的地信息，转移到深化询问状态
+                self.user_provides_destination(text)  # type: ignore
+                yield from self.ask_destination_deep_stream(text)
+                return
+            else:
+                # 用户没有提供目的地信息，重新询问
+                self.slot_invalid_destination(text)  # type: ignore
+                yield from self.ask_destination_again_stream(text)
+                return
+                
+        elif current_state == 'SLOT_FILLING_DESTINATION_DEEP':
+            # 深化目的地询问状态
+            # 首先检查用户是否表达了确认或进入下一阶段的意图
+            if any(keyword in text for keyword in ['确认', '正确', '可以', '是的', '对的', '进入下一阶段', '继续', '下一步', '差不多了', '就这样']):
+                # 用户表达了确认意图，转移到确认状态
+                self.destination_deep_complete()
+                yield from self.ask_destination_confirm_stream()
+                return
+            
+            # 收集完整的响应流，检查是否有END标记
+            full_content = ""
+            has_end = False
+            
+            for chunk in self.ask_destination_deep_stream(text):
+                if chunk['type'] == 'end':
+                    # 大模型确认了目的地信息，转移到确认状态
+                    has_end = True
+                    break
+                elif chunk['type'] == 'content':
+                    full_content += chunk.get('chunk', '')
+                    yield chunk
+                else:
+                    yield chunk
+            
+            # 如果检测到END，进行状态转换
+            if has_end:
+                self.destination_deep_complete()
+                yield from self.ask_destination_confirm_stream()
+                return
+            
+        elif current_state == 'SLOT_FILLING_DESTINATION_CONFIRM':
+            # 目的地确认状态
+            if any(keyword in text for keyword in ['确认', '正确', '可以', '是的', '对的', '进入下一阶段', '继续', '下一步', '差不多了', '就这样']):
+                # 用户确认了目的地信息
+                self.destination_confirmed()
+                yield from self.ask_budget_stream()
+                return
+            else:
+                # 用户没有确认，继续深化询问
+                yield from self.ask_destination_confirm_stream(text)
+                return
+                
+        elif current_state == 'SLOT_FILLING_BUDGET':
+            # 检查用户是否提供了预算信息
+            if self._has_budget_info(text):
+                # 用户提供了预算信息，转移到日期询问状态
+                self.user_provides_budget(text)  # type: ignore
+                yield from self.ask_dates_stream()
+                return
+            else:
+                # 用户没有提供预算信息，重新询问
+                self.slot_invalid_budget(text)  # type: ignore
+                yield from self.ask_budget_again_stream(text)
+                return
+                
+        elif current_state == 'SLOT_FILLING_DATES':
+            # 检查用户是否提供了日期信息
+            if self._has_dates_info(text):
+                # 用户提供了日期信息，转移到用户画像询问状态
+                self.user_provides_dates(text)  # type: ignore
+                yield from self.ask_profile_stream()
+                return
+            else:
+                # 用户没有提供日期信息，重新询问
+                self.slot_invalid_dates(text)  # type: ignore
+                yield from self.ask_dates_again_stream(text)
+                return
+                
+        elif current_state == 'SLOT_FILLING_PROFILE':
+            # 检查用户是否提供了用户画像信息
+            if self._has_profile_info(text):
+                # 用户提供了用户画像信息，检查是否已经进行过深化询问
+                if not self._profile_asked_basic:
+                    # 第一次回答，标记已询问基础信息，进行深化询问
+                    self._profile_asked_basic = True
+                    yield from self.ask_profile_extend_stream(text)
+                    return
+                elif self._profile_asked_basic and not self._profile_asked_again:
+                    # 已经进行过基础询问，但还没有进行过again询问，进行深化询问
+                    self._profile_asked_again = True
+                    yield from self.ask_profile_extend_stream(text)
+                    return
+                else:
+                    # 已经进行过深化询问，转移到确认状态
+                    self.user_provides_profile(text)  # type: ignore
+                    yield from self.ask_confirmation_stream()
+                    return
+            else:
+                # 用户没有提供用户画像信息，检查是否已经进行过基础询问
+                if not self._profile_asked_basic:
+                    self._profile_asked_basic = False
+                
+                if not self._profile_asked_basic:
+                    # 第一次询问，标记已询问基础信息
+                    self._profile_asked_basic = True
+                    self.slot_invalid_profile(text)  # type: ignore
+                    yield from self.ask_profile_again_stream(text)
+                    return
+                else:
+                    # 已经询问过基础信息，进行深化询问
+                    yield from self.ask_profile_extend_stream(text)
+                    return
+                
+        elif current_state == 'CONFIRMATION':
+            # 确认状态
+            if any(keyword in text for keyword in ['确认', '正确', '可以', '是的', '对的', '进入下一阶段', '继续', '下一步', '差不多了', '就这样']):
+                # 用户确认了所有信息
+                self.confirm()
+                yield from self.show_plan_stream()
+                return
+            else:
+                # 用户没有确认，重新询问
+                yield from self.ask_confirmation_stream()
+                return
+                
+        elif current_state == 'COMPLETED':
+            # 完成状态，可以重新开始或处理其他请求
+            yield {
+                'type': 'completed',
+                'full_content': '旅行计划已完成，如需重新规划请告诉我。'
+            }
+            return
+            
+        elif current_state == 'ERROR':
+            # 错误状态
+            yield from self.error_handler_stream()
+            return
+        
+        else:
+            # 处理其他状态（包括INIT）
+            # 特殊处理INIT状态
+            if current_state == 'INIT':
+                # 首次对话，强制进入目的地询问流程
+                self.machine.set_state('SLOT_FILLING_DESTINATION')
+                # 检查用户输入是否已经包含目的地信息
+                if self._has_destination_info(text, check_deep_process=False):
+                    # 用户提供了目的地信息，转移到深化询问状态
+                    self.user_provides_destination(text)  # type: ignore
+                    yield from self.ask_destination_deep_stream(text)
+                    return
+                else:
+                    # 用户没有提供目的地信息，询问目的地
+                    yield from self.ask_destination_stream()
+                    return
+            
+            # 如果不在槽位填充状态，找下一个未填槽位
+            next_slot = self._get_next_empty_slot()
+            if next_slot:
+                # 还有未填充的槽位，转移到对应状态
+                if next_slot == 'destination':
+                    # 目的地需要特殊处理，根据当前状态决定下一步
+                    if self.state == 'SLOT_FILLING_DESTINATION':
+                        yield from self.ask_destination_stream()
+                        return
+                    elif self.state == 'SLOT_FILLING_DESTINATION_DEEP':
+                        yield from self.ask_destination_deep_stream()
+                        return
+                    elif self.state == 'SLOT_FILLING_DESTINATION_CONFIRM':
+                        yield from self.ask_destination_confirm_stream()
+                        return
+                    else:
+                        # 如果不在目的地相关状态，转移到初始目的地状态
+                        self.machine.set_state('SLOT_FILLING_DESTINATION')
+                        yield from self.ask_destination_stream()
+                        return
+                elif next_slot == 'budget':
+                    target_state = 'SLOT_FILLING_BUDGET'
+                    if self.state != target_state:
+                        self.machine.set_state(target_state)
+                    yield from self.ask_budget_stream()
+                    return
+                elif next_slot == 'dates':
+                    target_state = 'SLOT_FILLING_DATES'
+                    if self.state != target_state:
+                        self.machine.set_state(target_state)
+                    yield from self.ask_dates_stream()
+                    return
+                elif next_slot == 'profile':
+                    target_state = 'SLOT_FILLING_PROFILE'
+                    if self.state != target_state:
+                        self.machine.set_state(target_state)
+                    yield from self.ask_profile_stream()
+                    return
+            else:
+                # 所有槽位都已填充，进入确认状态
+                if self.state != 'CONFIRMATION':
+                    self.machine.set_state('CONFIRMATION')
+                    yield from self.ask_confirmation_stream()
+                    return
+            
+            # 如果当前已经在确认状态，返回确认询问
+            if self.state == 'CONFIRMATION':
+                yield from self.ask_confirmation_stream()
+                return
+            elif self.state == 'COMPLETED':
+                yield from self.show_plan_stream()
+                return
+            elif self.state == 'ERROR':
+                yield from self.error_handler_stream()
+                return
+            
+            # 未知状态，使用错误处理
+            yield from self.error_handler_stream()
+            return 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # encoding: utf-8
 
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, Generator
 from talker.api import VivoGPT, VivoGPTError
 from requests import Response
 import logging
@@ -12,7 +12,7 @@ class ChatService:
     def __init__(self):
         self.vivo_client = VivoGPT()
     
-    def process_chat(self, message: str, chat_type: Optional[str] = None, temperature: float = 0.7, max_tokens: int = 2048, **kwargs) -> Union[Dict[str, Any], Response]:
+    def process_chat(self, message: str, chat_type: Optional[str] = None, temperature: float = 0.7, max_tokens: int = 2048, stream: bool = False, **kwargs) -> Union[Dict[str, Any], Response, Generator[Dict[str, Any], None, None]]:
         """处理聊天请求
         
         Args:
@@ -20,10 +20,12 @@ class ChatService:
             chat_type: 聊天类型（对应预设类型）
             temperature: 温度参数
             max_tokens: 最大生成长度
+            stream: 是否使用流式接口
             **kwargs: 其他参数，用于模板变量替换
             
         Returns:
-            聊天响应数据
+            如果stream=False: 返回同步响应数据
+            如果stream=True: 返回流式生成器
         """
         try:
             # 如果提供了 chat_type，先获取并处理模板
@@ -44,7 +46,8 @@ class ChatService:
                             prompt=formatted_prompt,
                             type=None,  # 不使用 type，因为我们已经处理了模板
                             temperature=temperature,
-                            max_tokens=max_tokens
+                            max_tokens=max_tokens,
+                            stream=stream
                         )
                     except KeyError as e:
                         # 如果模板变量不匹配，使用原始方式
@@ -53,7 +56,8 @@ class ChatService:
                             prompt=message,
                             type=chat_type,
                             temperature=temperature,
-                            max_tokens=max_tokens
+                            max_tokens=max_tokens,
+                            stream=stream
                         )
                 else:
                     raise ValueError(f"预设 {chat_type} 不存在")
@@ -63,7 +67,8 @@ class ChatService:
                     prompt=message,
                     type=None,
                     temperature=temperature,
-                    max_tokens=max_tokens
+                    max_tokens=max_tokens,
+                    stream=stream
                 )
             
             return response
@@ -101,7 +106,7 @@ class ChatService:
             parts.append(f"上下文：{state['context']}")
         return '；'.join(parts)
     
-    def process_chat_with_history(self, messages: list, state: Optional[Dict[str, Any]] = None, temperature: float = 0.7, max_tokens: int = 2048) -> Union[Dict[str, Any], Response]:
+    def process_chat_with_history(self, messages: list, state: Optional[Dict[str, Any]] = None, temperature: float = 0.7, max_tokens: int = 2048, stream: bool = False) -> Union[Dict[str, Any], Response, Generator[Dict[str, Any], None, None]]:
         """处理带历史记录的聊天请求
         
         Args:
@@ -109,9 +114,11 @@ class ChatService:
             state: 当前对话状态字典
             temperature: 温度参数
             max_tokens: 最大生成长度
+            stream: 是否使用流式接口
             
         Returns:
-            聊天响应数据
+            如果stream=False: 返回同步响应数据
+            如果stream=True: 返回流式生成器
         """
         try:
             # 如果有状态信息，将其格式化并作为system message添加到历史记录的开头
@@ -123,7 +130,8 @@ class ChatService:
             response = self.vivo_client.chat_with_history(
                 messages=messages,
                 temperature=temperature,
-                max_tokens=max_tokens
+                max_tokens=max_tokens,
+                stream=stream
             )
             return response
         except VivoGPTError as e:

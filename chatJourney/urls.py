@@ -19,7 +19,14 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from planner import views as planner_views
-from talker.views import ChatView, ChatHistoryView, TalkSessionViewSet
+from talker.views import (
+    ChatView,
+    ChatHistoryView,
+    TalkSessionViewSet,
+    SessionView,
+    StateMachineView,
+    ChatStreamView,
+)
 from hunter.views import XiaohongshuLoginView, XiaohongshuSearchView, XiaohongshuNoteContentView, XiaohongshuNoteCommentsView
 
 router = DefaultRouter()
@@ -33,6 +40,10 @@ urlpatterns = [
     path('api/', include(router.urls)),
     path('api/chat/', ChatView.as_view(), name='chat'),
     path('api/chat/history/', ChatHistoryView.as_view(), name='chat_history'),
+    path('api/message/', StateMachineView.as_view(), name='message'),
+    path('api/message/stream/', ChatStreamView.as_view(), name='message_stream'),
+    path('api/session/', SessionView.as_view(), name='session'),
+    path('api/session/<str:session_id>/', SessionView.as_view(), name='session_detail'),
     path('api/hunter/', include('hunter.urls')),
     path('api/talker/', include('talker.urls')),
 ]

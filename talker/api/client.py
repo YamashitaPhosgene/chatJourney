@@ -5,7 +5,7 @@ import requests
 import json
 import uuid
 import os
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any, Union, Generator
 from django.conf import settings
 from chatJourney.utils.auth import AuthUtils
 from .exceptions import VivoGPTError
@@ -76,8 +76,111 @@ class VivoGPT:
         if messages[0]["role"] != "user":
             raise ValueError("第一条消息的role必须是user")
     
-    def chat(self, prompt: str, type: Optional[str] = None, temperature: float = 0.7, max_tokens: int = 2048, stream: bool = False) -> Union[Dict[str, Any], Response]:
-        """同步调用蓝心大模型API（单轮对话）"""
+    def _parse_sse_response(self, response: Response) -> Generator[Dict[str, Any], None, None]:
+        """解析SSE响应流
+        
+        Args:
+            response: requests响应对象
+            
+        Yields:
+            解析后的数据字典
+        """
+        if response.status_code != 200:
+            raise VivoGPTError(
+                response.status_code,
+                f"HTTP错误: {response.status_code}"
+            )
+        
+        full_content = ""
+        for line in response.iter_lines():
+            if line:
+                line_str = line.decode('utf-8', errors='ignore')
+                
+                # 处理data行
+                if line_str.startswith('data:'):
+                    data_content = line_str[5:].strip()
+                    
+                    # 检查是否是结束标记
+                    if data_content == '[DONE]':
+                        yield {
+                            'type': 'done',
+                            'content': full_content,
+                            'full_content': full_content
+                        }
+                        return
+                    
+                    # 解析JSON数据
+                    try:
+                        data_json = json.loads(data_content)
+                        message = data_json.get('message', '')
+                        reply = data_json.get('reply', '')
+                        
+                        # 累积完整内容
+                        if message:
+                            full_content += message
+                        if reply:
+                            full_content += reply
+                        
+                        yield {
+                            'type': 'content',
+                            'chunk': message or reply,
+                            'full_content': full_content,
+                            'data': data_json
+                        }
+                    except json.JSONDecodeError:
+                        # 忽略无效的JSON
+                        continue
+                
+                # 处理event行
+                elif line_str.startswith('event:'):
+                    event_type = line_str[6:].strip()
+                    
+                    # 读取下一行的data
+                    try:
+                        next_line = next(response.iter_lines())
+                        if next_line:
+                            next_line_str = next_line.decode('utf-8', errors='ignore')
+                            if next_line_str.startswith('data:'):
+                                data_content = next_line_str[5:].strip()
+                                try:
+                                    event_data = json.loads(data_content)
+                                    yield {
+                                        'type': 'event',
+                                        'event': event_type,
+                                        'data': event_data,
+                                        'full_content': full_content
+                                    }
+                                    
+                                    # 如果是错误事件，抛出异常
+                                    if event_type == 'error':
+                                        raise VivoGPTError(
+                                            event_data.get('code', -1),
+                                            event_data.get('msg', '未知错误')
+                                        )
+                                except json.JSONDecodeError:
+                                    yield {
+                                        'type': 'event',
+                                        'event': event_type,
+                                        'data': data_content,
+                                        'full_content': full_content
+                                    }
+                    except StopIteration:
+                        break
+    
+    def chat(self, prompt: str, type: Optional[str] = None, temperature: float = 0.7, max_tokens: int = 2048, stream: bool = False) -> Union[Dict[str, Any], Response, Generator[Dict[str, Any], None, None]]:
+        """调用蓝心大模型API（单轮对话）
+        
+        Args:
+            prompt: 用户输入
+            type: 预设类型
+            temperature: 温度参数
+            max_tokens: 最大生成长度
+            stream: 是否使用流式接口
+            
+        Returns:
+            如果stream=False: 返回同步响应数据
+            如果stream=True: 返回流式生成器
+        """
         self._validate_parameters(temperature, max_tokens)
         
         if type:
@@ -115,7 +218,7 @@ class VivoGPT:
         
         if stream:
             response = requests.post(url_with_params, headers=headers, json=data, stream=True)
-            return response
+            return self._parse_sse_response(response)
         else:
             response = requests.post(url_with_params, headers=headers, json=data)
             response_data = response.json()
@@ -129,7 +232,18 @@ class VivoGPT:
             return response_data
     
     def chat_with_history(self, messages, temperature=0.7, max_tokens=2048, stream=False):
-        """使用多轮对话历史调用蓝心大模型API"""
+        """使用多轮对话历史调用蓝心大模型API
+        
+        Args:
+            messages: 消息历史列表
+            temperature: 温度参数
+            max_tokens: 最大生成长度
+            stream: 是否使用流式接口
+            
+        Returns:
+            如果stream=False: 返回同步响应数据
+            如果stream=True: 返回流式生成器
+        """
         self._validate_parameters(temperature, max_tokens)
         self._validate_messages(messages)
         
@@ -161,7 +275,7 @@ class VivoGPT:
         
         if stream:
             response = requests.post(url_with_params, headers=headers, json=data, stream=True)
-            return response
+            return self._parse_sse_response(response)
         else:
             response = requests.post(url_with_params, headers=headers, json=data)
             response_data = response.json()
