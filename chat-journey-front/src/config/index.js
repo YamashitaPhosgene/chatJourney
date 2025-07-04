@@ -1,0 +1,1 @@
+export const baseURL = "http://localhost:8000"; // 后端 Django 服务地址，可按需修改 

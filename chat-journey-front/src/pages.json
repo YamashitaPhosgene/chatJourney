@@ -1,0 +1,30 @@
+{
+  "pages": [
+    {
+      "path": "pages/index/index",
+      "style": {
+        "navigationBarTitleText": "ChatJourney",
+        "navigationStyle": "custom",
+        "navigationBarTextStyle": "white"
+      }
+    },
+    {
+      "path": "pages/detail/detail",
+      "style": {
+        "navigationBarTitleText": "行程详情"
+      }
+    },
+    {
+      "path": "pages/editRoute/editRoute",
+      "style": {
+        "navigationBarTitleText": "修改路线"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "ChatJourney",
+    "navigationBarBackgroundColor": "#4F7063",
+    "backgroundColor": "#F8F4E9"
+  }
+}
