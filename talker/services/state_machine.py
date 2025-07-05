@@ -158,6 +158,11 @@ class TravelAssistantFSM:
     
     def _on_enter_fill_profile(self, *args, **kwargs):
         """进入填充用户画像状态"""
+        # 重置用户画像询问标志 - 确保每次进入都从第一次开始
+        self._profile_asked_basic = False
+        self._profile_asked_again = False
+        logging.info(f"进入用户画像状态，重置标志: _profile_asked_basic={self._profile_asked_basic}, _profile_asked_again={self._profile_asked_again}")
+        
         self._set_session_state({
             "phase": "slot_filling",
             "intent": "fill_profile",
@@ -622,99 +627,44 @@ class TravelAssistantFSM:
     def show_plan(self, *args, **kwargs):
         """显示计划"""
         logging.info("显示旅行计划")
-        context_info = self._prepare_context_info()
-        state_info = self.session.state or {}
-        collected_info = self._format_collected_info()
         
-        response = self.chat_service.process_chat(
-            context_info, 
-            chat_type="show_plan",
-            phase=state_info.get('phase', '未知'),
-            intent=state_info.get('intent', '未知'),
-            context=state_info.get('context', '未知'),
-            collected_info=collected_info
-        )
-        response_text = response.get('data', {}).get('content', '好的，正在为您生成行程方案…')
-        
-        # 添加助手消息到历史记录
-        self.add_assistant_message(response_text)
-        
-        # 使用 RouteTimeService 解析行程并保存到数据库
+        # 使用新的Timeline服务生成行程
         try:
-            from planner.services.route_time_service import RouteTimeService
-            from planner.services.trip_service import TripService
-            from datetime import date
+            from talker.services.timeline_service import TimelineService
             
-            # 初始化 RouteTimeService
-            route_service = RouteTimeService()
+            # 初始化Timeline服务
+            timeline_service = TimelineService()
             
-            # 从会话中获取用户信息
-            user = self.session.user
+            # 生成完整的行程链
+            timeline_data = timeline_service.generate_timeline(self.session)
             
-            # 从槽位中获取开始日期
-            start_date = None
-            if self.slots.get('dates') and isinstance(self.slots['dates'], dict):
-                start_date_str = self.slots['dates'].get('start_date')
-                if start_date_str:
-                    try:
-                        start_date = date.fromisoformat(start_date_str)
-                    except ValueError:
-                        start_date = date.today()
-            else:
-                start_date = date.today()
+            # 格式化显示文本
+            response_text = timeline_service.format_timeline_for_display(timeline_data)
             
-            # 从槽位中获取目的地信息作为城市提示
-            city_hint = None
-            if self.slots.get('destination'):
-                destination = self.slots['destination']
-                if isinstance(destination, list) and destination:
-                    city_hint = destination[0]  # 使用第一个目的地作为城市提示
-                elif isinstance(destination, str):
-                    city_hint = destination
+            # 添加助手消息到历史记录
+            self.add_assistant_message(response_text)
             
-            # 生成行程标题
-            trip_title = f"AI规划行程_{self.session.id}"
-            if self.slots.get('destination'):
-                dest_str = str(self.slots['destination'])
-                trip_title = f"{dest_str}之旅"
+            # 获取结构化的行程链数据
+            itinerary_chain = timeline_service.get_timeline_chain(timeline_data)
             
-            # 生成行程描述
-            trip_description = "AI智能规划的个性化旅行行程"
-            if self.slots.get('profile'):
-                profile = self.slots['profile']
-                if isinstance(profile, dict):
-                    interests = profile.get('兴趣爱好', [])
-                    if interests:
-                        trip_description = f"适合{', '.join(interests)}爱好者的个性化行程"
-            
-            # 保存行程到数据库
-            trip = route_service.save_plan_to_db(
-                plan_text=response_text,
-                user=user,
-                trip_title=trip_title,
-                trip_description=trip_description,
-                city_hint=city_hint,
-                start_date=start_date
-            )
-            
-            logging.info(f"行程已保存到数据库，Trip ID: {trip.id}")
-            
-            # 使用 TripService 生成时间线
-            timeline_data = TripService.generate_timeline(trip)
-            
-            # 将时间线数据添加到回复中
-            timeline_summary = self._format_timeline_summary(timeline_data)
+            # 将行程链数据添加到回复中
+            if itinerary_chain:
+                timeline_summary = self._format_timeline_chain_summary(itinerary_chain)
             response_text += f"\n\n📅 详细时间安排：\n{timeline_summary}"
             
-            # 更新会话状态，记录已保存的行程ID
+            # 更新会话状态，记录Timeline数据
             if not self.session.state:
                 self.session.state = {}
-            self.session.state['saved_trip_id'] = trip.id
+            self.session.state['timeline_data'] = timeline_data
             self.session.save()
             
+            logging.info("Timeline服务生成行程成功")
+            
         except Exception as e:
-            logging.error(f"保存行程到数据库失败: {e}")
-            response_text += "\n\n⚠️ 行程已生成，但保存到数据库时遇到问题。"
+            logging.error(f"Timeline服务生成行程失败: {e}")
+            response_text = f"行程生成过程中遇到问题：{e}"
+            # 添加助手消息到历史记录
+            self.add_assistant_message(response_text)
         
         return response_text
     
@@ -766,6 +716,51 @@ class TravelAssistantFSM:
                     mode = event.get('mode', '')
                     emoji = TRANSPORT_EMOJI.get(mode, "🚙")
                     summary_parts.append(f"  {emoji} {start_time} - {end_time} {title} ({mode})")
+        return "\n".join(summary_parts)
+    
+    def _format_timeline_chain_summary(self, itinerary_chain: List[Dict[str, Any]]) -> str:
+        """格式化Timeline行程链摘要"""
+        if not itinerary_chain:
+            return "暂无时间安排"
+        
+        summary_parts = []
+        
+        # 活动类型 emoji 映射
+        TYPE_EMOJI = {
+            "sightseeing": "🏛️",
+            "dining": "🍽️",
+            "rest": "☕",
+            "free": "🎯",
+            "stay": "🏨"
+        }
+        
+        # 时间段 emoji 映射
+        TIME_EMOJI = {
+            "清晨": "🌅",
+            "上午": "🌞",
+            "中午": "🌤️",
+            "下午": "🌇",
+            "傍晚": "🌆",
+            "夜晚": "🌙"
+        }
+        
+        for day_data in itinerary_chain:
+            day = day_data.get('day', '未知')
+            activities = day_data.get('activities', [])
+            
+            summary_parts.append(f"\n{day}：")
+            
+            for activity in activities:
+                time_period = activity.get('time_period', '')
+                activity_type = activity.get('type', '')
+                place = activity.get('place', '未知地点')
+                description = activity.get('description', '无描述')
+                
+                time_emoji = TIME_EMOJI.get(time_period, "⏰")
+                type_emoji = TYPE_EMOJI.get(activity_type, "📍")
+                
+                summary_parts.append(f"  {time_emoji} {time_period} - {type_emoji} {place}: {description}")
+        
         return "\n".join(summary_parts)
     
     def cancel_flow(self, *args, **kwargs):
@@ -1401,6 +1396,12 @@ class TravelAssistantFSM:
                         logging.info(f"恢复状态机状态: {self.state} -> {target_state}")
                         self.machine.set_state(target_state)
                         logging.info(f"状态机状态已恢复: {self.state}")
+                        
+                        # 如果恢复到用户画像状态，重置profile相关标志
+                        if target_state == 'SLOT_FILLING_PROFILE':
+                            self._profile_asked_basic = False
+                            self._profile_asked_again = False
+                            logging.info(f"加载会话时重置用户画像标志: _profile_asked_basic={self._profile_asked_basic}, _profile_asked_again={self._profile_asked_again}")
             
             logging.info(f"加载会话成功: {session_id}, 当前状态: {self.state}")
             return True
@@ -2299,129 +2300,77 @@ class TravelAssistantFSM:
     def show_plan_stream(self, *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
         """显示计划（流式版本）"""
         logging.info("显示旅行计划（流式）")
-        context_info = self._prepare_context_info()
-        state_info = self.session.state or {}
-        collected_info = self._format_collected_info()
-        
-        full_response = ""
         
         try:
-            response_stream = self.chat_service.process_chat(
-                context_info, 
-                chat_type="show_plan",
-                phase=state_info.get('phase', '未知'),
-                intent=state_info.get('intent', '未知'),
-                context=state_info.get('context', '未知'),
-                collected_info=collected_info,
-                stream=True
-            )
+            # 首先输出开始生成消息
+            yield {
+                'type': 'content',
+                'chunk': '正在为您生成行程方案，请稍候...\n\n',
+                'full_content': '正在为您生成行程方案，请稍候...\n\n'
+            }
             
-            # 收集完整的响应内容
-            for chunk in self._process_stream_response(response_stream, '好的，正在为您生成行程方案…'):
-                if chunk.get('type') == 'content':
-                    full_response += chunk.get('chunk', '')
-                yield chunk
+            # 使用新的Timeline服务生成行程
+            from talker.services.timeline_service import TimelineService
+            
+            # 初始化Timeline服务
+            timeline_service = TimelineService()
+                
+            # 生成完整的行程链
+            timeline_data = timeline_service.generate_timeline(self.session)
+            
+            # 格式化显示文本
+            response_text = timeline_service.format_timeline_for_display(timeline_data)
+                
+            # 流式输出行程内容
+            yield {
+                'type': 'content',
+                'chunk': response_text,
+                'full_content': '正在为您生成行程方案，请稍候...\n\n' + response_text
+            }
             
             # 添加助手消息到历史记录
-            self.add_assistant_message(full_response)
+            self.add_assistant_message('正在为您生成行程方案，请稍候...\n\n' + response_text)
             
-            # 使用 RouteTimeService 解析行程并保存到数据库
-            try:
-                from planner.services.route_time_service import RouteTimeService
-                from planner.services.trip_service import TripService
-                from datetime import date
-                
-                # 初始化 RouteTimeService
-                route_service = RouteTimeService()
-                
-                # 从会话中获取用户信息
-                user = self.session.user
-                
-                # 从槽位中获取开始日期
-                start_date = None
-                if self.slots.get('dates') and isinstance(self.slots['dates'], dict):
-                    start_date_str = self.slots['dates'].get('start_date')
-                    if start_date_str:
-                        try:
-                            start_date = date.fromisoformat(start_date_str)
-                        except ValueError:
-                            start_date = date.today()
-                else:
-                    start_date = date.today()
-                
-                # 从槽位中获取目的地信息作为城市提示
-                city_hint = None
-                if self.slots.get('destination'):
-                    destination = self.slots['destination']
-                    if isinstance(destination, list) and destination:
-                        city_hint = destination[0]  # 使用第一个目的地作为城市提示
-                    elif isinstance(destination, str):
-                        city_hint = destination
-                
-                # 生成行程标题
-                trip_title = f"AI规划行程_{self.session.id}"
-                if self.slots.get('destination'):
-                    dest_str = str(self.slots['destination'])
-                    trip_title = f"{dest_str}之旅"
-                
-                # 生成行程描述
-                trip_description = "AI智能规划的个性化旅行行程"
-                if self.slots.get('profile'):
-                    profile = self.slots['profile']
-                    if isinstance(profile, dict):
-                        interests = profile.get('兴趣爱好', [])
-                        if interests:
-                            trip_description = f"适合{', '.join(interests)}爱好者的个性化行程"
-                
-                # 保存行程到数据库
-                trip = route_service.save_plan_to_db(
-                    plan_text=full_response,
-                    user=user,
-                    trip_title=trip_title,
-                    trip_description=trip_description,
-                    city_hint=city_hint,
-                    start_date=start_date
-                )
-                
-                logging.info(f"行程已保存到数据库，Trip ID: {trip.id}")
-                
-                # 使用 TripService 生成时间线
-                timeline_data = TripService.generate_timeline(trip)
-                
-                # 将时间线数据添加到回复中
-                timeline_summary = self._format_timeline_summary(timeline_data)
+            # 获取结构化的行程链数据并流式输出
+            itinerary_chain = timeline_service.get_timeline_chain(timeline_data)
+            
+            if itinerary_chain:
+                timeline_summary = self._format_timeline_chain_summary(itinerary_chain)
                 timeline_response = f"\n\n📅 详细时间安排：\n{timeline_summary}"
-                
-                # 更新会话状态，记录已保存的行程ID
-                if not self.session.state:
-                    self.session.state = {}
-                self.session.state['saved_trip_id'] = trip.id
-                self.session.save()
                 
                 # 流式输出时间线
                 yield {
                     'type': 'timeline',
                     'content': timeline_response,
-                    'trip_id': trip.id
-                }
-                
-            except Exception as e:
-                logging.error(f"保存行程到数据库失败: {e}")
-                error_response = "\n\n⚠️ 行程已生成，但保存到数据库时遇到问题。"
-                yield {
-                    'type': 'error',
-                    'content': error_response,
-                    'error': str(e)
+                    'timeline_data': timeline_data
                 }
             
+            # 更新会话状态，记录Timeline数据
+            if not self.session.state:
+                self.session.state = {}
+            self.session.state['timeline_data'] = timeline_data
+            self.session.save()
+            
+            # 输出完成标识
+            yield {
+                'type': 'done',
+                'full_content': '正在为您生成行程方案，请稍候...\n\n' + response_text,
+                'timeline_data': timeline_data
+                }
+            
+            logging.info("Timeline服务生成行程成功（流式）")
+            
         except Exception as e:
-            logging.error(f"流式处理错误: {e}")
-            default_response = '好的，正在为您生成行程方案…'
-            self.add_assistant_message(default_response)
+            logging.error(f"Timeline服务生成行程失败（流式）: {e}")
+            error_response = f"行程生成过程中遇到问题：{e}"
+            
+            # 添加错误消息到历史记录
+            self.add_assistant_message(error_response)
+            
             yield {
                 'type': 'error',
                 'error': str(e),
-                'full_content': default_response
+                'full_content': error_response
             }
     
     def cancel_flow_stream(self, *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
@@ -2763,6 +2712,11 @@ class TravelAssistantFSM:
                     return
                 else:
                     # 已经询问过基础信息，进行深化询问
+                    # 设置 _profile_asked_again 标志，确保与非流式版本的逻辑一致
+                    if not self._profile_asked_again:
+                        self._profile_asked_again = True
+                        logging.info(f"[STREAM] 在profile_extend前设置_profile_asked_again=True")
+                    
                     # 收集完整的响应流，检查是否有END标记
                     full_content = ""
                     has_end = False

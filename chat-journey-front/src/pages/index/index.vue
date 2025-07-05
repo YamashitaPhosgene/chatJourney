@@ -141,7 +141,6 @@
           <scroll-view
             scroll-y
             class="message-list"
-            :scroll-top="scrollTop"
             @scrolltoupper="loadMoreMessages"
           >
             <view
@@ -152,13 +151,14 @@
             >
               <template v-if="message.type === 'status'">
                 <view class="message-content status-content">
-                  <template v-if="message.content.includes('生成中')">
+                  <template v-if="message.content.includes('生成中') || message.content.includes('行程规划中')">
                     <image
                       class="status-icon loading-spin"
                       src="/static/icons/loading.svg"
                       mode="aspectFit"
                     />
-                    <text>生成中，请稍等...</text>
+                    <text v-if="message.content.includes('行程规划中')">正在生成行程链，请稍等...</text>
+                    <text v-else>生成中，请稍等...</text>
                     <button class="cancel-btn" @click="cancelGeneration">
                       取消生成
                     </button>
@@ -213,7 +213,7 @@
           </scroll-view>
         </view>
         <!-- 新增提示词区域 -->
-        <view class="suggestion-bar" v-if="!showWelcome && suggestions.length">
+        <view class="suggestion-bar" v-if="!showWelcome && suggestions.length && !awaitingReply && !initializing && !isGenerating">
           <view class="suggestion-title">你还可以这样说</view>
           <scroll-view scroll-x class="suggestion-list">
             <view
@@ -226,6 +226,16 @@
             </view>
           </scroll-view>
         </view>
+      </view>
+
+      <!-- 回到底部按钮 -->
+      <view 
+        class="back-to-bottom-btn" 
+        v-if="!showWelcome && isUserScrolling && messages.length > 5"
+        @click="forceScrollToBottom"
+      >
+        <image src="/static/icons/send.png" mode="aspectFit" class="back-to-bottom-icon"></image>
+        <text>回到底部</text>
       </view>
 
       <!-- 底部占位 -->
@@ -667,9 +677,11 @@
                 </template>
                 <template v-else-if="budgetJigsawData.budget_type === 'specific'">
                   预算分配 (总预算: {{ budgetJigsawData.budget_value }}元)
+                  <text v-if="budgetJigsawData.total_considered > budgetJigsawData.budget_max" style="color: #ff6b6b; font-size: 12px; margin-left: 8px;">⚠️ 超出预算</text>
                 </template>
                 <template v-else-if="budgetJigsawData.budget_type === 'range'">
                   预算分配 (范围: {{ budgetJigsawData.budget_min }}-{{ budgetJigsawData.budget_max }}元)
+                  <text v-if="budgetJigsawData.total_considered > budgetJigsawData.budget_max" style="color: #ff6b6b; font-size: 12px; margin-left: 8px;">⚠️ 超出预算</text>
                 </template>
                 <template v-else-if="budgetJigsawData.budget_type === 'unlimited'">
                   预算分配 (不限预算)
@@ -809,14 +821,7 @@
                 </view>
               </view>
               
-              <!-- 预算调整提示 -->
-              <view v-if="budgetJigsawData.budget_type === 'range' && budgetJigsawData.total_considered > budgetJigsawData.budget_max" 
-                    style="margin-top: 15px; padding: 12px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
-                <view style="font-size: 14px; color: #856404; font-weight: bold; margin-bottom: 4px;">预算提醒</view>
-                <view style="font-size: 13px; color: #856404;">
-                  当前预算已超出设定的最高限额，建议调整行程或增加预算。
-                </view>
-              </view>
+
               
               <!-- 交通预算预留提示 -->
               <view v-if="budgetJigsawData.budget_breakdown && budgetJigsawData.budget_breakdown.交通 === 0" 
@@ -1066,7 +1071,10 @@ export default {
         ],
       ],
       sessionId: null, // 后端会话ID
-      scrollTop: 0,
+      isUserScrolling: false, // 用户是否在手动滚动
+      shouldAutoScroll: true, // 是否应该自动滚动到底部
+      lastScrollTime: 0, // 上次滚动时间，用于控制滚动频率
+      lastScrollTop: undefined, // 上次滚动位置，用于判断滚动方向
       _creatingSession: null,
       initializing: false,
       queuedMessage: "",
@@ -1083,6 +1091,7 @@ export default {
       selectedPoi: null, // 当前选中的POI
       shouldUpdatePOIAfterReply: false, // 控制是否在大模型回复后更新POI
       locationJigsawLoading: false, // 目的地推荐数据加载状态
+      timelineAbortController: null, // Timeline生成请求的取消控制器
     };
   },
   onLoad() {
@@ -1094,6 +1103,42 @@ export default {
     if (this.sessionId) {
       this.fetchSessionState();
     }
+  },
+  onPageScroll(e) {
+    const scrollTop = e.scrollTop;
+    
+    // 记录当前滚动位置，用于判断滚动方向
+    if (this.lastScrollTop === undefined) {
+      this.lastScrollTop = scrollTop;
+      return;
+    }
+    
+    const scrollDirection = scrollTop > this.lastScrollTop ? 'down' : 'up';
+    const scrollDiff = Math.abs(scrollTop - this.lastScrollTop);
+    this.lastScrollTop = scrollTop;
+    
+    // 只有在用户明显滚动时才处理（避免微小滚动触发）
+    if (scrollDiff < 5) return;
+    
+    // 获取页面高度信息
+    const systemInfo = uni.getSystemInfoSync();
+    const windowHeight = systemInfo.windowHeight;
+    
+    // 简化判断：只检查是否接近底部
+    uni.createSelectorQuery().selectViewport().scrollOffset((res) => {
+      const maxScrollTop = res.scrollHeight - windowHeight;
+      const isNearBottom = scrollTop >= maxScrollTop - 100;
+      
+      if (scrollDirection === 'up' && scrollTop > 100) {
+        // 用户向上滚动且不在最顶部，停止自动滚动
+        this.isUserScrolling = true;
+        this.shouldAutoScroll = false;
+      } else if (isNearBottom) {
+        // 用户滚动到底部附近，恢复自动滚动
+        this.isUserScrolling = false;
+        this.shouldAutoScroll = true;
+      }
+    }).exec();
   },
   watch: {
     "budgetJigsawData.住宿"(newVal) {
@@ -1140,6 +1185,8 @@ export default {
         }, 100);
       } else {
         this.inputMessage = content;
+        // 用户点击建议时，强制滚动到底部
+        this.forceScrollToBottom();
         this.sendMessage();
       }
     },
@@ -1602,14 +1649,220 @@ export default {
     },
 
     /** 更新行程拼图数据 */
-    updateItineraryData() {
+    async updateItineraryData() {
       // 根据收集的信息生成行程
-      // TODO: 调用 /api/talker/itinerary/generate/ 接口
       if (this.currentState === 'COMPLETED' || this.currentState === 'CONFIRMATION') {
-        console.log('更新行程拼图数据 - 生成完整行程');
-        // 暂时使用示例数据
+        console.log('更新行程拼图数据 - 开始生成Timeline行程链');
+        
+        try {
+          // 显示生成状态
+          this.isGenerating = true;
+          
+          // 添加状态消息
+          this.messages.push({
+            type: "status",
+            content: "行程规划中，正在生成个性化行程链..."
+          });
+          this.scrollToBottom();
+          
+          // 设置取消标志
+          this.timelineAbortController = { cancelled: false };
+          
+          // 调用Timeline服务API
+          const response = await request(`/api/talker/timeline/${this.sessionId}/`, {}, "GET");
+          
+          // 检查是否已被取消
+          if (this.timelineAbortController && this.timelineAbortController.cancelled) {
+            console.log('Timeline生成已被用户取消');
+            return;
+          }
+          
+          if (response.success && response.timeline_data) {
+            // 转换Timeline数据格式为前端itinerary格式
+            this.itinerary = this.convertTimelineToItinerary(response.timeline_data);
+            
+            // 移除生成状态消息
+            this.messages = this.messages.filter(
+              (msg) => !(msg.type === "status" && msg.content.includes("行程规划中"))
+            );
+            
+            // 添加完成状态
+            this.messages.push({
+              type: "status",
+              content: "行程链生成完成"
+            });
+            
+            console.log('Timeline行程链生成成功:', this.itinerary);
+          } else {
+            throw new Error(response.error || '行程生成失败');
+          }
+        } catch (error) {
+          console.error('Timeline行程生成失败:', error);
+          
+          // 移除生成状态消息
+          this.messages = this.messages.filter(
+            (msg) => !(msg.type === "status" && msg.content.includes("行程规划中"))
+          );
+          
+          // 如果是用户取消的请求，不显示错误消息
+          if (this.timelineAbortController && this.timelineAbortController.cancelled) {
+            console.log('Timeline生成已被用户取消');
+            return;
+          }
+          
+          // 显示错误消息
+          this.messages.push({
+            type: "ai",
+            content: "⚠️ 行程生成失败，为您使用默认行程模板",
+            time: new Date().toLocaleTimeString(),
+          });
+          
+          // 使用示例数据作为后备
         this.itinerary = this.getSampleItinerary();
+        } finally {
+          this.isGenerating = false;
+          this.timelineAbortController = null;
+          this.scrollToBottom();
+        }
       }
+    },
+
+    /** 将Timeline数据转换为前端itinerary格式 */
+    convertTimelineToItinerary(timelineData) {
+      console.log('开始转换Timeline数据:', timelineData);
+      
+      try {
+        const itineraryChain = timelineData.itinerary_chain || [];
+        const convertedItinerary = [];
+        
+        itineraryChain.forEach((dayData, dayIndex) => {
+          const dayInfo = {
+            date: dayData.day || `第${dayIndex + 1}天`,
+            weatherIcon: this.getRandomWeatherIcon(),
+            temperature: this.getRandomTemperature(),
+            events: []
+          };
+          
+          const activities = dayData.activities || [];
+          
+          activities.forEach((activity, activityIndex) => {
+            const event = {
+              time: activity.time || `${8 + activityIndex * 2}:00`,
+              image: this.getActivityImage(activity),
+              location: activity.location || activity.activity || '未知地点',
+              type: this.getActivityType(activity),
+              duration: this.getActivityDuration(activity)
+            };
+            
+            // 添加交通信息（除了最后一个活动）
+            if (activityIndex < activities.length - 1) {
+              event.travel = {
+                duration: this.calculateTravelTime(activity, activities[activityIndex + 1]),
+                method: this.getTravelMethod(activity, activities[activityIndex + 1])
+              };
+            }
+            
+            dayInfo.events.push(event);
+          });
+          
+          convertedItinerary.push(dayInfo);
+        });
+        
+        console.log('Timeline数据转换完成:', convertedItinerary);
+        return convertedItinerary.length > 0 ? convertedItinerary : this.getSampleItinerary();
+        
+      } catch (error) {
+        console.error('Timeline数据转换失败:', error);
+        return this.getSampleItinerary();
+      }
+    },
+
+    /** 获取活动图片 */
+    getActivityImage(activity) {
+      const activityName = (activity.activity || activity.location || '').toLowerCase();
+      
+      if (activityName.includes('机场') || activityName.includes('airport')) {
+        return '/static/images/airport1.jpg';
+      } else if (activityName.includes('饭店') || activityName.includes('餐厅') || 
+                 activityName.includes('美食') || activityName.includes('用餐')) {
+        return '/static/images/food.jpg';
+      } else if (activityName.includes('花') || activityName.includes('公园') || 
+                 activityName.includes('景点') || activityName.includes('游览')) {
+        return '/static/images/flower.jpg';
+      } else {
+        return '/static/images/banner.jpg';
+      }
+    },
+
+    /** 获取活动类型 */
+    getActivityType(activity) {
+      const activityName = (activity.activity || activity.location || '').toLowerCase();
+      
+      if (activityName.includes('机场') || activityName.includes('交通')) {
+        return '交通';
+      } else if (activityName.includes('饭店') || activityName.includes('餐厅') || 
+                 activityName.includes('用餐') || activityName.includes('美食')) {
+        return '吃饭';
+      } else if (activityName.includes('酒店') || activityName.includes('住宿')) {
+        return '住宿';
+      } else {
+        return '游玩';
+      }
+    },
+
+    /** 获取活动时长 */
+    getActivityDuration(activity) {
+      const type = this.getActivityType(activity);
+      
+      switch (type) {
+        case '交通': return 60;
+        case '吃饭': return 90;
+        case '住宿': return 480;
+        case '游玩': return 120;
+        default: return 90;
+      }
+    },
+
+    /** 计算交通时间 */
+    calculateTravelTime(fromActivity, toActivity) {
+      // 简单的时间估算逻辑
+      const fromType = this.getActivityType(fromActivity);
+      const toType = this.getActivityType(toActivity);
+      
+      if (fromType === '住宿' || toType === '住宿') {
+        return '15min';
+      } else if (fromType === '交通' || toType === '交通') {
+        return '45min';
+      } else {
+        return '20min';
+      }
+    },
+
+    /** 获取交通方式 */
+    getTravelMethod(fromActivity, toActivity) {
+      const fromName = (fromActivity.location || fromActivity.activity || '').toLowerCase();
+      const toName = (toActivity.location || toActivity.activity || '').toLowerCase();
+      
+      if (fromName.includes('机场') || toName.includes('机场')) {
+        return '乘大巴前往';
+      } else if (fromName.includes('地铁') || toName.includes('地铁')) {
+        return '乘地铁前往';
+      } else {
+        return Math.random() > 0.5 ? '步行' : '打车前往';
+      }
+    },
+
+    /** 获取随机天气图标 */
+    getRandomWeatherIcon() {
+      const icons = ['☀️', '⛅', '🌤️', '⛈️'];
+      return icons[Math.floor(Math.random() * icons.length)];
+    },
+
+    /** 获取随机温度 */
+    getRandomTemperature() {
+      const low = Math.floor(Math.random() * 10) + 20;
+      const high = low + Math.floor(Math.random() * 10) + 5;
+      return `${low}/${high}℃`;
     },
 
     /** 真正发送消息到后端并处理回复 */
@@ -1672,6 +1925,7 @@ export default {
             });
       
       this.streamingMessageIndex = this.messages.length - 1;
+      // 开始流式输出时滚动到底部
       this.scrollToBottom();
 
       // 优先尝试真正的流式请求
@@ -1716,10 +1970,15 @@ export default {
               content: this.streamingContent
             });
             
-            // 自动滚动到底部
-            this.$nextTick(() => {
-              this.scrollToBottom();
-            });
+            // 降低滚动频率：每10个字符或每500ms滚动一次
+            if (this.shouldAutoScroll && !this.isUserScrolling) {
+              if (!this.lastScrollTime || Date.now() - this.lastScrollTime > 500) {
+                this.lastScrollTime = Date.now();
+                this.$nextTick(() => {
+                  this.scrollToBottom();
+                });
+              }
+            }
           }, 10); // 10ms延迟
         }
       }
@@ -1810,10 +2069,16 @@ export default {
       });
     },
     sendMessage() {
+      // 阻止在loading状态下发送消息
+      if (this.awaitingReply || this.initializing) {
+        console.log('正在等待回复或初始化中，忽略发送请求');
+        return;
+      }
+      
       const text = this.inputMessage.trim();
       if (!text) return;
 
-        this.inputMessage = "";
+      this.inputMessage = "";
 
       if (!this.sessionId) {
         // 首次对话：先创建会话，获取AI问候，然后再发送用户信息
@@ -1874,14 +2139,41 @@ export default {
         time: new Date().toLocaleTimeString(),
       });
       this.showWelcome = false;
+      // 用户发送消息后强制滚动到底部
+      this.forceScrollToBottom();
+    },
+    
+
+    
+    /** 智能滚动到底部 */
+    scrollToBottom() {
+      // 只有在应该自动滚动的情况下才滚动
+      if (!this.shouldAutoScroll) {
+        return;
+      }
+      
+      // 如果用户正在手动滚动或查看历史消息，不要自动滚动
+      if (this.isUserScrolling) {
+        return;
+      }
+      
       this.$nextTick(() => {
-        this.lastMessageId = "msg-" + (this.messages.length - 1);
+        // 使用uni.pageScrollTo滚动整个页面到底部
+        uni.pageScrollTo({
+          scrollTop: 99999, // 使用足够大的值确保滚动到底部
+          duration: 300,
+          success: () => {
+            // console.log('页面滚动成功');
+          }
+        });
       });
     },
-    scrollToBottom() {
-      this.$nextTick(() => {
-        this.lastMessageId = "msg-" + (this.messages.length - 1);
-      });
+    
+    /** 强制滚动到底部（无论用户是否在查看历史消息） */
+    forceScrollToBottom() {
+      this.shouldAutoScroll = true;
+      this.isUserScrolling = false;
+      this.scrollToBottom();
     },
     getSampleItinerary() {
       return [
@@ -2027,9 +2319,12 @@ export default {
       return { main: time, range: null };
     },
     cancelGeneration() {
-      // 只移除包含"生成中"的状态消息
+      // 移除包含"生成中"或"行程规划中"的状态消息
       this.messages = this.messages.filter(
-        (msg) => !(msg.type === "status" && msg.content.includes("生成中"))
+        (msg) => !(msg.type === "status" && (
+          msg.content.includes("生成中") || 
+          msg.content.includes("行程规划中")
+        ))
       );
       this.isGenerating = false;
 
@@ -2039,6 +2334,11 @@ export default {
         content: "已取消生成",
       });
       this.scrollToBottom();
+
+      // 如果有Timeline生成请求，标记为已取消
+      if (this.timelineAbortController) {
+        this.timelineAbortController.cancelled = true;
+      }
 
       // 添加AI询问消息
       setTimeout(() => {
@@ -2279,6 +2579,9 @@ export default {
       this.selectedPoi = null;
       // 清空POI数据
       this.myPoisData = [];
+      // 重置滚动状态
+      this.isUserScrolling = false;
+      this.shouldAutoScroll = true;
     },
   },
 };
@@ -3499,5 +3802,42 @@ export default {
 
 .poi-remove-btn:active {
   transform: translateY(0);
+}
+
+/* 回到底部按钮样式 */
+.back-to-bottom-btn {
+  position: fixed;
+  right: 20px;
+  bottom: 160px;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  border-radius: 25px;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 100;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.back-to-bottom-btn:hover {
+  background: rgba(0, 0, 0, 0.8);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+}
+
+.back-to-bottom-btn:active {
+  transform: translateY(0);
+}
+
+.back-to-bottom-icon {
+  width: 16px;
+  height: 16px;
+  transform: rotate(90deg); /* 将发送图标旋转90度作为向下箭头 */
 }
 </style>

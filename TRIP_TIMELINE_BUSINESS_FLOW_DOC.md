@@ -10,8 +10,10 @@
 6. [行程解析引擎](#6-行程解析引擎)
 7. [时间线生成](#7-时间线生成)
 8. [数据库设计](#8-数据库设计)
-9. [API接口](#9-api接口)
-10. [错误处理](#10-错误处理)
+9. [数据结构详解](#9-数据结构详解)
+10. [服务类架构](#10-服务类架构)
+11. [API接口](#11-api接口)
+12. [错误处理](#12-错误处理)
 
 ---
 
@@ -1070,11 +1072,703 @@ erDiagram
 
 ---
 
-## 9. API接口
+## 9. 数据结构详解
 
-### 9.1 核心API端点
+### 9.1 Django模型详解
 
-#### 9.1.1 创建会话
+#### 9.1.1 对话会话模型（TalkSession）
+
+```python
+class TalkSession(models.Model):
+    """对话会话表 - 存储完整的对话状态和槽位信息"""
+    id = models.AutoField(primary_key=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='talk_sessions')
+    history = models.JSONField(default=list, help_text="对话历史记录")
+    budget = models.CharField(max_length=50, null=True, blank=True, help_text="预算")
+    locations = models.JSONField(default=list, help_text="地点列表")
+    start_date = models.DateField(null=True, blank=True, help_text="第一天日期")
+    end_date = models.DateField(null=True, blank=True, help_text="最后一天日期")
+    state = models.JSONField(default=dict, blank=True, help_text="当前对话状态，包含阶段、意图等信息")
+    user_profile = models.JSONField(default=dict, blank=True, help_text="用户画像，记录偏好、心情等信息")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+```
+
+**字段详解**：
+- `history`: 存储完整的对话历史，格式为 `[{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]`
+- `state`: 存储状态机当前状态，包含 `phase`、`intent`、`context` 等信息
+- `user_profile`: 用户画像数据，包含情感状态、同行人员、旅行风格等
+- `locations`: 用户提及的目的地列表，如 `["成都", "青羊宫", "宽窄巷子"]`
+
+**使用场景**：
+- 状态机恢复：加载会话时恢复到上次的状态
+- 槽位填充：存储收集到的目的地、预算、日期等信息
+- 对话历史：支持多轮对话的上下文理解
+
+#### 9.1.2 POI数据模型
+
+```python
+class POIItem(models.Model):
+    """POI基础信息表（全局唯一）"""
+    id = models.AutoField(primary_key=True)
+    name = models.CharField(max_length=200, help_text="POI名称")
+    poi_id = models.CharField(max_length=50, unique=True, help_text="高德POI ID")
+    address = models.CharField(max_length=500, null=True, blank=True, help_text="地址")
+    location = models.CharField(max_length=100, null=True, blank=True, help_text="经纬度坐标")
+    type = models.CharField(max_length=100, null=True, blank=True, help_text="POI类型")
+    tel = models.CharField(max_length=50, null=True, blank=True, help_text="电话")
+    distance = models.CharField(max_length=50, null=True, blank=True, help_text="距离")
+    raw_data = models.JSONField(default=dict, help_text="原始高德API数据")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+class POISession(models.Model):
+    """会话-POI关联表"""
+    id = models.AutoField(primary_key=True)
+    session = models.ForeignKey(TalkSession, on_delete=models.CASCADE, related_name='poi_sessions')
+    poi = models.ForeignKey(POIItem, on_delete=models.CASCADE, related_name='session_relations')
+    source = models.CharField(max_length=20, choices=[
+        ('manual', '用户手动添加'),
+        ('reverse_search', 'locations逆搜索'),
+        ('keyword_search', '关键词搜索')
+    ], help_text="POI来源")
+    created_at = models.DateTimeField(auto_now_add=True)
+```
+
+**设计思路**：
+- **分离存储**：POI基础信息与会话关联分离，避免数据冗余
+- **去重机制**：`poi_id` 全局唯一，避免重复存储同一POI
+- **来源追踪**：记录POI的来源，便于统计和分析
+
+**使用场景**：
+- 目的地深化：用户提及地点时自动搜索相关POI
+- 行程规划：为行程生成提供POI数据支持
+- 数据分析：统计用户关注的POI类型
+
+#### 9.1.3 行程计划模型
+
+```python
+class Trip(models.Model):
+    """行程表"""
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+class Location(models.Model):
+    """地点表"""
+    CATEGORY_CHOICES = [
+        ('sight', '景点'),
+        ('hotel', '酒店'),
+        ('restaurant', '餐厅'),
+        ('transport', '交通枢纽'),
+        ('custom', '自定义'),
+    ]
+    name = models.CharField(max_length=200)
+    address = models.CharField(max_length=300, blank=True)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='custom')
+    phone = models.CharField(max_length=50, blank=True)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+class Activity(models.Model):
+    """活动表"""
+    CATEGORY_CHOICES = [
+        ('sightseeing', '游览'),
+        ('dining', '餐饮'),
+        ('transport', '交通'),
+        ('rest', '休息'),
+        ('free', '自由活动'),
+        ('custom', '自定义'),
+    ]
+    trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name='activities')
+    location = models.ForeignKey(Location, on_delete=models.SET_NULL, null=True, blank=True)
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='custom')
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    date = models.DateField()
+    start_time = models.TimeField()
+    duration = models.DurationField(default=timedelta(hours=1))
+    cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+class Transport(models.Model):
+    """交通表"""
+    MODE_CHOICES = [
+        ('fly', '飞机'),
+        ('train', '火车'),
+        ('bus', '大巴'),
+        ('metro', '地铁'),
+        ('taxi', '出租'),
+        ('car', '自驾'),
+        ('other', '其他'),
+    ]
+    trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name='transports')
+    mode = models.CharField(max_length=20, choices=MODE_CHOICES)
+    from_location = models.ForeignKey(Location, related_name='transport_from', on_delete=models.SET_NULL, null=True)
+    to_location = models.ForeignKey(Location, related_name='transport_to', on_delete=models.SET_NULL, null=True)
+    date = models.DateField()
+    start_time = models.TimeField()
+    duration = models.DurationField(default=timedelta(hours=1))
+    cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+```
+
+**使用场景**：
+- 行程生成：将AI生成的行程文本解析为结构化数据
+- 时间线计算：基于活动和交通安排计算详细时间
+- 成本统计：统计整个行程的预算和实际花费
+
+#### 9.1.4 POI分类模型
+
+```python
+class POICategory(models.Model):
+    """高德官方POI分类码表"""
+    code = models.CharField("typecode", max_length=6, primary_key=True)
+    big_cn = models.CharField("大类(中文)", max_length=32, blank=True)
+    mid_cn = models.CharField("中类(中文)", max_length=32, blank=True)
+    sub_cn = models.CharField("小类(中文)", max_length=32, blank=True)
+    big_en = models.CharField("Big Category", max_length=64, blank=True)
+    mid_en = models.CharField("Mid Category", max_length=64, blank=True)
+    sub_en = models.CharField("Sub Category", max_length=64, blank=True)
+
+class POIKeywordAlias(models.Model):
+    """自定义同义词→官方code映射"""
+    alias = models.CharField(max_length=64, unique=True)
+    code = models.CharField(max_length=6)
+```
+
+**使用场景**：
+- 智能类型解析：将用户输入的关键词映射到标准POI分类
+- 搜索优化：使用同义词扩展搜索范围
+- 内容理解：理解用户的真实意图
+
+### 9.2 数据传输对象（DTO）
+
+#### 9.2.1 行程解析数据类
+
+```python
+@dataclass
+class ActivityInfo:
+    """活动信息"""
+    name: str                    # 活动名称，如"游览观光"
+    duration_minutes: int        # 活动时长（分钟）
+    location: str               # 地点名称
+
+@dataclass
+class DayPlan:
+    """单日行程计划"""
+    day_number: int                           # 第几天
+    activities: List[ActivityInfo]            # 活动列表
+    transport_segments: List[Dict[str, Any]]  # 交通段列表
+
+@dataclass
+class RouteSegment:
+    """路线段信息"""
+    from_location: str              # 起点
+    to_location: str               # 终点
+    transport_mode: str            # 交通方式
+    duration_seconds: int          # 时长（秒）
+    activity_before: Optional[ActivityInfo] = None  # 前一个活动
+    activity_after: Optional[ActivityInfo] = None   # 后一个活动
+```
+
+**使用场景**：
+- 行程文本解析：将AI生成的行程文本转换为结构化数据
+- 时间计算：计算每个活动和交通段的时间
+- 数据传递：在服务层之间传递行程数据
+
+#### 9.2.2 配置数据类
+
+```python
+class HunterConfig:
+    """Hunter模块配置类"""
+    # 基础路径配置
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    BROWSER_DATA_DIR = BASE_DIR / "browser_data"
+    DATA_DIR = BASE_DIR / "data"
+    
+    # 浏览器配置
+    BROWSER_HEADLESS = False
+    BROWSER_TIMEOUT = 60000
+    BROWSER_VIEWPORT = {"width": 1280, "height": 800}
+    
+    # 服务配置
+    SERVICE_HOST = "localhost"
+    SERVICE_PORT = 8001
+    
+    # 小红书配置
+    XIAOHONGSHU_BASE_URL = "https://www.xiaohongshu.com"
+    XIAOHONGSHU_LOGIN_TIMEOUT = 180
+    
+    # 搜索配置
+    DEFAULT_SEARCH_LIMIT = 5
+    SEARCH_WAIT_TIME = 5
+```
+
+**使用场景**：
+- 环境配置：统一管理模块配置参数
+- 服务初始化：提供服务启动所需的配置
+- 开发调试：便于调整参数进行测试
+
+### 9.3 交通方式映射
+
+```python
+# 交通方式关键字映射
+MODE_MAP = {
+    "步行": "walking",
+    "驾车": "driving", 
+    "公交": "transit",
+    "地铁": "transit",
+    "打车": "driving",
+    "自驾": "driving",
+    "骑行": "bicycling",
+    "高铁": "driving",
+    "飞机": "driving",
+    "火车": "driving",
+}
+
+# 交通方式数据库映射
+TRANSPORT_MODE_MAP = {
+    "步行": "other",
+    "地铁": "metro",
+    "公交": "bus", 
+    "打车": "taxi",
+    "自驾": "car",
+    "骑行": "other",
+    "高铁": "train",
+    "飞机": "fly",
+    "火车": "train",
+}
+
+# 交通方式emoji映射
+TRANSPORT_EMOJI = {
+    "步行": "🚶",
+    "骑行": "🚴",
+    "打车": "🚗",
+    "驾车": "🚗",
+    "公交": "🚌",
+    "地铁": "🚇",
+    "高铁": "🚄",
+    "火车": "🚄",
+    "飞机": "✈️",
+    "other": "🚙"
+}
+```
+
+**使用场景**：
+- 行程解析：识别行程文本中的交通方式
+- API调用：映射到高德地图API的参数
+- 界面展示：在前端显示对应的图标
+
+### 9.4 POI类型映射
+
+```python
+# 精确匹配字典（常用词快速匹配）
+EXACT_DICT = {
+    # 美食类
+    "小笼包": "050100",
+    "火锅": "050117",
+    "烧烤": "050120",
+    "奶茶": "050500",
+    "咖啡": "050504",
+    "甜品": "050900",
+    "小吃": "050800",
+    
+    # 购物类
+    "商场": "060100",
+    "购物中心": "060100",
+    "百货": "060102",
+    "超市": "060400",
+    "便利店": "060200",
+    
+    # 娱乐类
+    "电影院": "080601",
+    "KTV": "080302",
+    "游戏厅": "080305",
+    "酒吧": "080304",
+    
+    # 景点类
+    "公园": "110101",
+    "博物馆": "110102",
+    "美术馆": "110103",
+    "动物园": "110104",
+    "游乐园": "110108",
+    "景区": "110000",
+    
+    # 交通类
+    "地铁站": "150500",
+    "公交站": "150500",
+    "火车站": "150500",
+    "机场": "150100",
+    
+    # 住宿类
+    "酒店": "100100",
+    "宾馆": "100100",
+    "民宿": "980100",
+}
+```
+
+**使用场景**：
+- 关键词识别：快速匹配用户输入的POI类型
+- 搜索优化：精准定位用户需求
+- 内容分类：对POI进行智能分类
+
+---
+
+## 10. 服务类架构
+
+### 10.1 核心服务层
+
+#### 10.1.1 状态机服务（TravelAssistantFSM）
+
+```python
+class TravelAssistantFSM:
+    """旅行助手状态机 - 核心业务流程控制"""
+    
+    def __init__(self, session_id: str = None):
+        self.session_id = session_id
+        self.session = None
+        self.chat_service = ChatService()
+        self.poi_service = POIManagementService()
+        self._setup_state_machine()
+    
+    def _setup_state_machine(self):
+        """设置状态机状态和转换"""
+        states = [
+            'INIT',
+            'SLOT_FILLING_DESTINATION',
+            'SLOT_FILLING_DESTINATION_DEEP',
+            'SLOT_FILLING_DESTINATION_CONFIRM',
+            'SLOT_FILLING_BUDGET',
+            'SLOT_FILLING_DATES',
+            'SLOT_FILLING_PROFILE',
+            'CONFIRMATION',
+            'COMPLETED',
+            'ERROR'
+        ]
+        
+        self.machine = Machine(
+            model=self,
+            states=states,
+            initial='INIT',
+            auto_transitions=False
+        )
+        
+        self._setup_transitions()
+        self._setup_callbacks()
+```
+
+**核心功能**：
+- 状态转换控制：管理对话流程的状态转换
+- 槽位信息管理：收集和验证用户输入的信息
+- 会话持久化：保存和恢复会话状态
+- 错误处理：处理异常情况和状态恢复
+
+**使用场景**：
+- Web API：处理前端的流式对话请求
+- CLI工具：提供命令行交互界面
+- 批量处理：处理多个会话的状态管理
+
+#### 10.1.2 POI管理服务（POIManagementService）
+
+```python
+class POIManagementService:
+    """POI管理服务 - 统一处理POI基础信息和会话关联"""
+    
+    def __init__(self):
+        self.amap_client = AmapPlaceAPI(key=settings.AMAP_KEY)
+    
+    def add_poi_from_search_result(self, session: TalkSession, 
+                                  poi_data: Dict[str, Any], 
+                                  source: str = 'keyword_search') -> Dict[str, Any]:
+        """添加POI到全局POIItem表，并建立POISession关联"""
+        
+    def get_session_pois(self, session: TalkSession, 
+                        source: str = None) -> List[Dict[str, Any]]:
+        """获取会话相关的POI列表"""
+        
+    def reverse_search_pois(self, session: TalkSession, 
+                           locations: List[str], 
+                           city_hint: str = None) -> Dict[str, Any]:
+        """根据地点名称列表逆向搜索POI"""
+        
+    def remove_poi(self, session: TalkSession, poi_id: int) -> bool:
+        """删除会话下的POI关联"""
+        
+    def get_poi_statistics(self, session: TalkSession) -> Dict[str, int]:
+        """获取POI统计信息"""
+```
+
+**核心功能**：
+- POI数据去重：避免重复存储相同的POI
+- 会话关联：建立POI与会话的关联关系
+- 搜索集成：调用高德API进行POI搜索
+- 数据清洗：清理和标准化POI数据
+
+**使用场景**：
+- 目的地深化：用户提及地点时自动搜索相关POI
+- 行程规划：为行程生成提供POI数据支持
+- 数据分析：统计用户关注的POI类型和偏好
+
+#### 10.1.3 行程解析服务（RouteTimeService）
+
+```python
+class RouteTimeService:
+    """行程解析和时间计算服务"""
+    
+    def __init__(self, amap_key: str = None):
+        self.key = amap_key or settings.AMAP_KEY
+        self.geo_api = AmapGeocodeAPI(self.key)
+        self.dir_api = AmapDirectionAPI(self.key)
+        self.place_api = AmapPlaceAPI(self.key)
+    
+    def parse_multi_day_plan(self, plan_text: str) -> List[DayPlan]:
+        """解析多天行程文本"""
+        
+    def calculate_route_time(self, day_plans: List[DayPlan], 
+                           city_hint: str = None) -> List[RouteSegment]:
+        """计算路线时间"""
+        
+    def create_trip_with_timeline(self, user: User, 
+                                 day_plans: List[DayPlan], 
+                                 route_segments: List[RouteSegment],
+                                 title: str = "AI生成行程") -> Trip:
+        """创建行程并生成时间线"""
+```
+
+**核心功能**：
+- 行程文本解析：将AI生成的行程文本转换为结构化数据
+- 地理编码：获取地点的经纬度坐标
+- 路线计算：调用高德API计算交通时间
+- 时间线生成：生成详细的时间安排
+
+**使用场景**：
+- 行程生成：处理AI生成的行程文本
+- 时间优化：优化行程的时间安排
+- 路线规划：计算最优的交通路线
+
+#### 10.1.4 对话服务（ChatService）
+
+```python
+class ChatService:
+    """聊天服务类 - 处理与大模型的交互"""
+    
+    def __init__(self):
+        self.vivo_client = VivoGPT()
+    
+    def process_chat(self, message: str, 
+                    chat_type: Optional[str] = None,
+                    temperature: float = 0.7,
+                    max_tokens: int = 2048,
+                    stream: bool = False,
+                    **kwargs) -> Union[Dict[str, Any], Response, Generator]:
+        """处理聊天请求"""
+        
+    def extract_information(self, history: List[Dict], 
+                          extract_type: str) -> Dict[str, Any]:
+        """从对话历史中提取信息"""
+        
+    def generate_response(self, context: Dict[str, Any], 
+                         response_type: str,
+                         **kwargs) -> str:
+        """生成回应"""
+```
+
+**核心功能**：
+- 模型交互：封装与大模型的API调用
+- 信息提取：从对话中提取结构化信息
+- 流式处理：支持流式响应
+- 模板管理：管理不同类型的Prompt模板
+
+**使用场景**：
+- 槽位填充：提取用户输入的信息
+- 对话生成：生成自然的回应
+- 行程规划：生成行程建议
+
+### 10.2 专业服务层
+
+#### 10.2.1 小红书总结服务（XiaohongshuSummaryService）
+
+```python
+class XiaohongshuSummaryService:
+    """小红书内容总结服务"""
+    
+    def __init__(self):
+        self.hunter_api = None
+        self.chat_service = ChatService()
+        self.is_initialized = False
+    
+    async def initialize(self) -> Dict[str, Any]:
+        """初始化服务（启动浏览器）"""
+        
+    async def search_and_summarize(self, keyword: str, 
+                                  limit: int = 5,
+                                  summary_type: str = 'food') -> Dict[str, Any]:
+        """搜索并总结小红书内容"""
+        
+    async def shutdown(self) -> Dict[str, Any]:
+        """关闭服务"""
+```
+
+**核心功能**：
+- 内容爬取：自动化浏览器获取小红书内容
+- 内容总结：使用AI总结用户关注的内容
+- 数据保存：保存总结结果到文件
+
+**使用场景**：
+- 目的地研究：总结目的地的美食、景点等信息
+- 内容分析：分析用户生成的内容
+- 决策支持：为旅行规划提供参考信息
+
+#### 10.2.2 Hunter类型解析器（HunterTypeResolver）
+
+```python
+class HunterTypeResolver:
+    """POI类型智能解析器"""
+    
+    def __init__(self):
+        self.place_api = AmapPlaceAPI(key=settings.AMAP_KEY)
+        self.load_official_categories()
+    
+    def resolve_poi_type(self, keyword: str) -> List[str]:
+        """解析POI类型"""
+        
+    def fuzzy_match_category(self, keyword: str) -> List[Tuple[str, float]]:
+        """模糊匹配POI分类"""
+        
+    def semantic_search(self, keyword: str) -> List[str]:
+        """语义搜索POI类型"""
+```
+
+**核心功能**：
+- 智能类型识别：将用户输入映射到标准POI分类
+- 模糊匹配：处理用户输入的变体和错误
+- 语义理解：理解用户的真实意图
+
+**使用场景**：
+- 关键词搜索：优化POI搜索的准确性
+- 内容分类：对POI进行智能分类
+- 用户意图理解：理解用户的搜索意图
+
+### 10.3 工具服务层
+
+#### 10.3.1 CLI服务（CLIService）
+
+```python
+class CLIService:
+    """命令行服务类 - 提供命令行交互界面"""
+    
+    def __init__(self):
+        self.fsm: Optional[TravelAssistantFSM] = None
+        self.poi_service = POIManagementService()
+    
+    def create_session(self, username: str = "fangsuo") -> str:
+        """创建新会话"""
+        
+    def load_session(self, session_id: str) -> bool:
+        """加载已有会话"""
+        
+    def chat(self, message: str) -> str:
+        """发送消息并获取回复"""
+        
+    def show_session_info(self):
+        """显示会话信息"""
+        
+    def list_pois(self, source: str = None):
+        """列出POI"""
+        
+    def remove_poi_by_id(self, poi_id: int):
+        """删除POI"""
+```
+
+**核心功能**：
+- 会话管理：创建、加载、保存会话
+- 交互界面：提供命令行交互
+- 状态展示：显示当前会话状态
+- POI管理：管理会话中的POI
+
+**使用场景**：
+- 开发调试：快速测试业务逻辑
+- 批量处理：处理多个会话
+- 数据管理：管理和清理数据
+
+#### 10.3.2 时间线服务（TripService）
+
+```python
+class TripService:
+    """行程管理和时间线生成服务"""
+    
+    @staticmethod
+    def generate_timeline(trip: Trip) -> Dict[str, Any]:
+        """生成行程时间线"""
+        
+    @staticmethod
+    def _create_activity_event(activity: Activity, 
+                              start_time: datetime) -> Dict[str, Any]:
+        """创建活动事件"""
+        
+    @staticmethod
+    def _create_transport_events(from_activity: Activity,
+                                to_activity: Activity,
+                                current_time: datetime) -> Tuple[Dict, Dict]:
+        """创建交通事件"""
+```
+
+**核心功能**：
+- 时间线生成：基于行程数据生成详细时间线
+- 事件创建：创建活动和交通事件
+- 时间计算：计算活动和交通的时间安排
+
+**使用场景**：
+- 行程展示：在前端显示详细的时间线
+- 时间优化：优化行程的时间安排
+- 冲突检测：检测时间冲突和合理性
+
+### 10.4 服务层协作关系
+
+```mermaid
+graph TB
+    A[TravelAssistantFSM<br/>状态机服务] --> B[ChatService<br/>对话服务]
+    A --> C[POIManagementService<br/>POI管理服务]
+    A --> D[RouteTimeService<br/>行程解析服务]
+    
+    C --> E[AmapPlaceAPI<br/>高德POI API]
+    D --> F[AmapGeocodeAPI<br/>高德地理编码API]
+    D --> G[AmapDirectionAPI<br/>高德路线API]
+    
+    H[XiaohongshuSummaryService<br/>小红书总结服务] --> B
+    H --> I[HunterAPI<br/>内容爬取API]
+    
+    J[CLIService<br/>CLI服务] --> A
+    K[WebAPI<br/>Web接口] --> A
+    
+    L[TripService<br/>时间线服务] --> D
+    M[HunterTypeResolver<br/>类型解析器] --> C
+```
+
+**协作模式**：
+- **状态机中心**：TravelAssistantFSM作为核心协调器
+- **服务分层**：按功能划分不同的服务层
+- **API封装**：统一封装外部API调用
+- **数据流向**：单向数据流，避免循环依赖
+
+---
+
+## 11. API接口
+
+### 11.1 核心API端点
+
+#### 11.1.1 创建会话
 ```python
 POST /api/chat/session/create/
 Content-Type: application/json
@@ -1091,7 +1785,7 @@ Content-Type: application/json
 }
 ```
 
-#### 9.1.2 发送消息（流式）
+#### 11.1.2 发送消息（流式）
 ```python
 POST /api/chat/stream/
 Content-Type: application/json
@@ -1107,7 +1801,7 @@ data: {"type": "content", "chunk": "是个", "full_content": "成都是个"}
 data: {"type": "done", "full_content": "成都是个很不错的城市..."}
 ```
 
-#### 9.1.3 发送消息（非流式）
+#### 11.1.3 发送消息（非流式）
 ```python
 POST /api/chat/
 Content-Type: application/json
@@ -1133,7 +1827,7 @@ Content-Type: application/json
 }
 ```
 
-#### 9.1.4 获取会话信息
+#### 11.1.4 获取会话信息
 ```python
 GET /api/chat/session/{session_id}/info/
 
@@ -1160,7 +1854,7 @@ GET /api/chat/session/{session_id}/info/
 }
 ```
 
-#### 9.1.5 获取对话历史
+#### 11.1.5 获取对话历史
 ```python
 GET /api/chat/session/{session_id}/history/
 
@@ -1176,7 +1870,7 @@ GET /api/chat/session/{session_id}/history/
 }
 ```
 
-### 9.2 错误响应格式
+### 11.2 错误响应格式
 
 ```python
 {
@@ -1189,7 +1883,7 @@ GET /api/chat/session/{session_id}/history/
 }
 ```
 
-### 9.3 状态机状态响应
+### 11.3 状态机状态响应
 
 ```python
 {
@@ -1205,28 +1899,28 @@ GET /api/chat/session/{session_id}/history/
 
 ---
 
-## 10. 错误处理
+## 12. 错误处理
 
-### 10.1 错误类型分类
+### 12.1 错误类型分类
 
-#### 10.1.1 系统级错误
+#### 12.1.1 系统级错误
 - **数据库连接失败**: 自动重试机制
 - **外部API调用失败**: 降级处理，使用缓存数据
 - **状态机状态异常**: 重置到安全状态
 
-#### 10.1.2 业务逻辑错误
+#### 12.1.2 业务逻辑错误
 - **会话不存在**: 提示用户重新创建会话
 - **槽位验证失败**: 重新询问用户输入
 - **行程解析失败**: 使用默认行程模板
 
-#### 10.1.3 用户输入错误
+#### 12.1.3 用户输入错误
 - **无效的日期格式**: 智能日期解析或提示用户
 - **无法识别的地点**: 调用POI搜索或询问用户澄清
 - **空白或无效输入**: 礼貌提示用户重新输入
 
-### 10.2 错误处理策略
+### 12.2 错误处理策略
 
-#### 10.2.1 状态机错误处理
+#### 12.2.1 状态机错误处理
 
 ```python
 def error_handler(self, *args, **kwargs):
@@ -1252,7 +1946,7 @@ def error_handler(self, *args, **kwargs):
     return response_text
 ```
 
-#### 10.2.2 API错误处理
+#### 12.2.2 API错误处理
 
 ```python
 def api_error_handler(func):
@@ -1283,7 +1977,7 @@ def api_error_handler(func):
     return wrapper
 ```
 
-#### 10.2.3 行程解析错误处理
+#### 12.2.3 行程解析错误处理
 
 ```python
 def safe_parse_plan(self, plan_text: str, fallback_locations: List[str] = None):
@@ -1320,9 +2014,9 @@ def _create_fallback_plan(self, locations: List[str]):
     )]
 ```
 
-### 10.3 日志和监控
+### 12.3 日志和监控
 
-#### 10.3.1 日志级别
+#### 12.3.1 日志级别
 
 ```python
 import logging
@@ -1343,7 +2037,7 @@ logging.warning(f"POI搜索失败，使用默认位置: {location_name}")
 logging.error(f"行程解析异常: {error}, 输入文本: {plan_text[:100]}")
 ```
 
-#### 10.3.2 关键指标监控
+#### 12.3.2 关键指标监控
 
 - **会话创建成功率**: 95%以上
 - **状态机转换成功率**: 98%以上
@@ -1351,7 +2045,7 @@ logging.error(f"行程解析异常: {error}, 输入文本: {plan_text[:100]}")
 - **API响应时间**: 平均<2秒，99%<5秒
 - **流式响应首字节时间**: <500ms
 
-#### 10.3.3 告警机制
+#### 12.3.3 告警机制
 
 ```python
 def monitor_alert(metric_name: str, value: float, threshold: float):
@@ -1376,9 +2070,9 @@ def handle_utterance_stream(self, text: str):
 
 ---
 
-## 11. 总结
+## 13. 总结
 
-### 11.1 系统特点
+### 13.1 系统特点
 
 1. **完整的对话流程**: 从信息收集到行程生成的端到端解决方案
 2. **智能状态管理**: 基于状态机的多轮对话，确保信息收集的完整性
@@ -1386,7 +2080,7 @@ def handle_utterance_stream(self, text: str):
 4. **精准的时间计算**: 结合地理位置和交通方式的智能时间安排
 5. **流式用户体验**: 支持实时响应的流式对话界面
 
-### 11.2 技术亮点
+### 13.2 技术亮点
 
 - **状态机驱动**: 使用Python transitions库实现可靠的状态管理
 - **多层次Prompt设计**: 针对不同阶段精心设计的Prompt模板
@@ -1394,7 +2088,7 @@ def handle_utterance_stream(self, text: str):
 - **地理信息集成**: 与高德地图API深度集成的位置服务
 - **容错机制**: 完善的错误处理和降级策略
 
-### 11.3 扩展方向
+### 13.3 扩展方向
 
 1. **更多交通方式支持**: 火车、飞机等长途交通的精确计算
 2. **个性化推荐**: 基于用户历史和偏好的智能推荐

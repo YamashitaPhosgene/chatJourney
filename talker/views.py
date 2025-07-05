@@ -15,6 +15,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from .services.xiaohongshu_summary_service import summary_service
 import logging
+from talker.services.timeline_service import TimelineService
+from django.views.decorators.http import require_http_methods, require_POST, require_GET
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -1288,3 +1290,154 @@ class ListPOIView(View):
         except Exception as e:
             logging.error(f"获取POI列表错误: {e}")
             return JsonResponse({"error": True, "message": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_POST
+def state_machine_api(request):
+    """状态机对话API"""
+    try:
+        # 解析请求数据
+        data = json.loads(request.body)
+        session_id = data.get('session_id')
+        message = data.get('message', '')
+        is_stream = data.get('stream', False)
+        
+        if not session_id:
+            return JsonResponse({'error': '缺少session_id参数'}, status=400)
+        
+        # 获取会话
+        try:
+            session = TalkSession.objects.get(id=session_id)
+        except TalkSession.DoesNotExist:
+            return JsonResponse({'error': '会话不存在'}, status=404)
+        
+        # 初始化状态机
+        state_machine = TalkStateMachine(session)
+        
+        if is_stream:
+            # 流式响应
+            response_generator = state_machine.handle_message_stream(message)
+            
+            def generate_sse():
+                try:
+                    for chunk in response_generator:
+                        yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+                    yield "data: [DONE]\n\n"
+                except Exception as e:
+                    logging.error(f"流式生成出错: {e}")
+                    yield f"data: {json.dumps({'type': 'error', 'error': str(e)}, ensure_ascii=False)}\n\n"
+            
+            from django.http import StreamingHttpResponse
+            response = StreamingHttpResponse(generate_sse(), content_type='text/event-stream')
+            response['Cache-Control'] = 'no-cache'
+            response['Connection'] = 'keep-alive'
+            return response
+        else:
+            # 非流式响应
+            try:
+                result = state_machine.handle_message(message)
+                return JsonResponse({
+                    'response': result,
+                    'success': True
+                })
+            except Exception as e:
+                logging.error(f"处理消息失败: {e}")
+                return JsonResponse({
+                    'error': str(e),
+                    'success': False
+                }, status=500)
+                
+    except json.JSONDecodeError:
+        return JsonResponse({'error': '无效的JSON数据'}, status=400)
+    except Exception as e:
+        logging.error(f"状态机API出错: {e}")
+        return JsonResponse({'error': '服务器内部错误'}, status=500)
+
+@csrf_exempt
+@require_GET
+def timeline_api(request, session_id):
+    """Timeline服务API - 生成行程链"""
+    try:
+        # 获取会话
+        try:
+            session = TalkSession.objects.get(id=session_id)
+        except TalkSession.DoesNotExist:
+            return JsonResponse({'error': '会话不存在'}, status=404)
+        
+        # 初始化Timeline服务
+        timeline_service = TimelineService()
+        
+        # 生成Timeline
+        logging.info(f"开始为会话 {session_id} 生成Timeline")
+        timeline_data = timeline_service.generate_timeline(session)
+        
+        if timeline_data.get('success'):
+            logging.info(f"Timeline生成成功: 会话 {session_id}")
+            return JsonResponse({
+                'success': True,
+                'timeline_data': timeline_data,
+                'message': '行程链生成成功'
+            })
+        else:
+            logging.error(f"Timeline生成失败: 会话 {session_id}, 错误: {timeline_data.get('error', '未知错误')}")
+            return JsonResponse({
+                'success': False,
+                'error': timeline_data.get('error', '行程链生成失败'),
+                'timeline_data': None
+            }, status=500)
+            
+    except Exception as e:
+        logging.error(f"Timeline API出错: 会话 {session_id}, 错误: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': f'服务器内部错误: {str(e)}',
+            'timeline_data': None
+        }, status=500)
+
+@csrf_exempt
+@require_GET
+def session_state_api(request, session_id):
+    """获取会话状态API"""
+    try:
+        # 获取会话
+        try:
+            session = TalkSession.objects.get(id=session_id)
+        except TalkSession.DoesNotExist:
+            return JsonResponse({'error': '会话不存在'}, status=404)
+        
+        # 初始化状态机获取状态
+        state_machine = TalkStateMachine(session)
+        
+        # 获取会话信息
+        session_info = {
+            'id': session.id,
+            'locations': session.locations,
+            'budget': session.budget,
+            'start_date': session.start_date.isoformat() if session.start_date else None,
+            'end_date': session.end_date.isoformat() if session.end_date else None,
+            'user_profile': session.user_profile,
+            'state': session.state,
+            'created_at': session.created_at.isoformat(),
+            'updated_at': session.updated_at.isoformat(),
+        }
+        
+        # 获取槽位信息
+        slots_info = state_machine._get_slot_status()
+        
+        # 获取当前状态
+        current_state = state_machine._get_current_state()
+        
+        return JsonResponse({
+            'session_info': session_info,
+            'slots_info': slots_info,
+            'current_state': current_state,
+            'success': True
+        })
+        
+    except Exception as e:
+        logging.error(f"获取会话状态失败: 会话 {session_id}, 错误: {e}")
+        return JsonResponse({
+            'error': f'获取会话状态失败: {str(e)}',
+            'success': False
+        }, status=500)

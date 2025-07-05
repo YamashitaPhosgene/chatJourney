@@ -26,6 +26,7 @@ import logging
 import time
 from typing import Dict, List, Any, Optional
 from collections import defaultdict
+import re
 
 from django.conf import settings
 from hunter.api.amap_api import (
@@ -419,18 +420,41 @@ class POISearchPipeline:
             # 3) 构建分类码映射
             code_map = build_code_map(keywords_json.get("interest_keywords", []))
             if not code_map:
-                logging.warning("未找到匹配的POI分类码，将进行全类型搜索")
-                print(f"⚠️  未找到匹配的POI分类码，将进行全类型搜索")
+                logging.info("未找到匹配的POI分类码，将进行全类型搜索")
+                print(f"🌐 未找到匹配的POI分类码，将进行全类型搜索")
             else:
                 print(f"🏷️  构建分类码映射: {dict(code_map)}")
 
-            # 4) 双循环POI搜索：关键词 × 兴趣类别
-            pois = self.search_by_kw_and_code(
-                keywords_json.get("primary_keywords", []), 
-                code_map, 
-                adcode,
-                avoid_keywords=keywords_json.get("avoid_keywords", [])
-            )
+            # 4) POI搜索：根据是否有分类码选择不同的搜索策略
+            if code_map:
+                # 有分类码：双循环搜索（关键词 × 兴趣类别）
+                pois = self.search_by_kw_and_code(
+                    keywords_json.get("primary_keywords", []), 
+                    code_map, 
+                    adcode,
+                    avoid_keywords=keywords_json.get("avoid_keywords", [])
+                )
+            else:
+                # 无分类码：直接搜索，不指定types
+                logging.info("执行无类型限制的POI搜索")
+                print(f"🔍 执行无类型限制的POI搜索")
+                
+                raw_pois = self._search_pois(
+                    keywords_json.get("primary_keywords", []),
+                    types=None,  # 不指定分类码
+                    adcode=adcode,
+                    avoid_keywords=keywords_json.get("avoid_keywords", [])
+                )
+                
+                # 转换为与双循环搜索相同的格式：{keyword: {typecode: [poi_list]}}
+                pois = {}
+                for keyword, poi_list in raw_pois.items():
+                    if poi_list and "error" not in poi_list[0]:
+                        pois[keyword] = {"no_type": poi_list}
+                    else:
+                        pois[keyword] = {}
+                        
+                logging.info(f"无类型限制搜索完成，找到 {len(pois)} 个关键词的结果")
 
             result = {
                 "query": keywords_json,
@@ -603,7 +627,7 @@ def filter_by_avoid_words(
         avoid_codes: list[str] | None = None
 ) -> list[dict]:
     """
-    根据避雷关键词 / typecode 过滤 POI 列表
+    根据避雷关键词 / typecode 过滤 POI 列表，并添加数据质量过滤
     :param pois:  高德返回的 poi dict 列表
     :param avoid_words:  ["火锅", "hotpot", ...]
     :param avoid_codes:  ["050117", ...]   可选
@@ -613,13 +637,49 @@ def filter_by_avoid_words(
     keep: list[dict] = []
 
     for p in pois:
-        name   = (p.get("name", "") or "").lower()
+        name = (p.get("name", "") or "").lower()
+        address = (p.get("address", "") or "")
         tcodes = p.get("typecode", "")  # 可能是 "050117|110201..."
+        
         # A. 名称中含避雷词？
         if any(w in name for w in avoid_words_lower):
+            logging.debug(f"POI被避雷词过滤: {p.get('name', '未知')} (匹配词: {[w for w in avoid_words_lower if w in name]})")
             continue
+            
         # B. typecode 命中避雷 code？
         if any(code for code in tcodes.split("|") if code in avoid_codes):
+            logging.debug(f"POI被避雷码过滤: {p.get('name', '未知')} (typecode: {tcodes})")
             continue
+            
+        # C. 数据质量过滤
+        # C1. 过滤typecode为空或"N/A"的POI
+        if not tcodes or tcodes.strip() == "" or tcodes.strip().lower() == "n/a":
+            logging.debug(f"POI被数据质量过滤(无效typecode): {p.get('name', '未知')} (typecode: '{tcodes}')")
+            continue
+            
+        # C2. 过滤包含完整地址格式的POI名称（如：省市区+POI名）
+        poi_name = p.get("name", "")
+        if poi_name:
+            # 检查是否包含省市区的完整地址格式
+            address_pattern = r'(省|市|区|县|镇|街道|路|号)'
+            if len(poi_name) > 10 and len(re.findall(address_pattern, poi_name)) >= 3:
+                # 如果POI名称很长且包含多个地址标识符，可能是地址而不是POI
+                logging.debug(f"POI被数据质量过滤(地址格式): {poi_name}")
+                continue
+                
+            # 检查是否是"省+市+区+POI名"的格式
+            if re.match(r'^.+省.+市.+区.+', poi_name):
+                logging.debug(f"POI被数据质量过滤(省市区格式): {poi_name}")
+                continue
+        
+        # C3. 过滤地址字段为空且名称疑似地址的POI
+        if not address and poi_name and len(poi_name) > 15:
+            # 如果没有地址信息且名称很长，可能是地址解析结果
+            logging.debug(f"POI被数据质量过滤(无地址长名称): {poi_name}")
+            continue
+            
+        # 通过所有过滤条件
         keep.append(p)
+        
+    logging.info(f"POI过滤完成: 输入{len(pois)}个，输出{len(keep)}个，过滤掉{len(pois)-len(keep)}个")
     return keep 

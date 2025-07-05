@@ -10,6 +10,7 @@ import time
 from collections import Counter
 from pathlib import Path
 from typing import Optional
+import logging
 
 import numpy as np
 import requests
@@ -97,6 +98,14 @@ EXACT_DICT = {
     "古迹":   "110205",
     "寺庙":   "110205",
     "道观":   "110205",
+    
+    # ——— 植物园/园林类 ———
+    "植物园": "110103",    # 园区景点（明确）
+    "花园":   "110103",    # 园区景点（明确）
+    "园林":   "110103",    # 园区景点（明确）
+    "绿化":   "110103",    # 园区景点（明确）
+    "温室":   "110103",    # 园区景点（明确）
+    "苗圃":   "110103",    # 园区景点（明确）
 
     # ——— 交通类 ———
     "地铁站": "150500",
@@ -142,6 +151,19 @@ EXACT_DICT = {
     "gym":        "080306",
 }
 
+# 歧义词黑名单 - 这些词语有多种含义，拒绝自动映射
+AMBIGUOUS_WORDS = {
+    "花卉",      # 可能是花卉店、花卉园区、花卉市场
+    "植物",      # 可能是植物园、植物店、植物市场
+    "园区",      # 可能是工业园区、景点园区、住宅园区
+    "广场",      # 可能是购物广场、公园广场、交通广场
+    "中心",      # 可能是购物中心、商务中心、文化中心
+    "市场",      # 可能是菜市场、商品市场、景点市场
+    "城",        # 可能是购物城、古城景点、住宅城
+    "店",        # 太泛化，需要具体店铺类型
+    "馆",        # 太泛化，需要具体馆类型
+    "场",        # 太泛化，需要具体场地类型
+}
 
 # ──────────────────────────────────────────────────────────────
 # ==========  远程向量请求  ====================================
@@ -221,6 +243,12 @@ def resolve_typecode(keyword: str) -> str | None:
     kw = keyword.strip()
     if not kw:
         return None
+    
+    # 检查歧义词黑名单 - 直接拒绝映射
+    if kw in AMBIGUOUS_WORDS:
+        logging.info(f"关键词 '{kw}' 是歧义词，拒绝自动映射，建议用户提供更具体的描述")
+        return None
+    
     # 1. 别名表
     alias = POIKeywordAlias.objects.filter(alias__iexact=kw).first()
     if alias:
