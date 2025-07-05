@@ -116,10 +116,17 @@ class POISearchPipeline:
             关键词JSON字典
         """
         try:
+            print(f"\n🤖 _call_llm() 开始调用大模型生成关键词")
+            print(f"   传入conversation: {len(conversation) if conversation else 0}条对话")
+            print(f"   传入session_info: {session_info.keys() if session_info else 'None'}")
+            
             # 使用项目中已有的POI关键词生成服务
             keywords = self.poi_keywords_service._generate_keywords(conversation, session_info or {})
             
+            print(f"   大模型返回关键词: {keywords}")
+            
             if not keywords:
+                print(f"   ⚠️  大模型返回空关键词，使用默认结构")
                 # 如果生成失败，返回默认结构
                 return {
                     "primary_keywords": [],
@@ -133,6 +140,7 @@ class POISearchPipeline:
             return keywords
             
         except Exception as e:
+            print(f"   ❌ LLM关键词生成失败: {e}")
             logging.error(f"LLM关键词生成失败: {e}")
             return {
                 "primary_keywords": [],
@@ -239,7 +247,11 @@ class POISearchPipeline:
         
         for kw in primary_keywords:
             try:
-                kwargs = dict(keywords=kw, page_size=3)
+                kwargs = dict(
+                    keywords=kw, 
+                    page_size=3,
+                    show_fields="business,photos"  # 包含商业信息和图片
+                )
                 if types:
                     kwargs["types"] = types
                 if adcode:
@@ -305,7 +317,8 @@ class POISearchPipeline:
                     kwargs = dict(
                         keywords=kw,
                         types=code,  # 单一typecode
-                        page_size=3  # 减少单次请求数据量
+                        page_size=5,  # 减少单次请求数据量
+                        show_fields="business,photos"  # 包含商业信息和图片
                     )
                     if adcode:
                         kwargs.update(region=adcode, city_limit=True)
@@ -378,19 +391,38 @@ class POISearchPipeline:
             搜索结果字典
         """
         try:
+            print(f"\n🚀 POI搜索管道 run() 开始执行")
+            print(f"   输入参数: conversation长度={len(conversation) if conversation else 0}, "
+                  f"session_info={'有' if session_info else '无'}, llm_keywords={'有' if llm_keywords else '无'}")
+            
             # 1) LLM 生成关键词
             keywords_json = llm_keywords or self._call_llm(conversation, session_info)
+            
+            print(f"\n🧠 LLM生成的关键词详情:")
+            print(f"   primary_keywords: {keywords_json.get('primary_keywords', [])}")
+            print(f"   secondary_keywords: {keywords_json.get('secondary_keywords', [])}")
+            print(f"   city_keywords: {keywords_json.get('city_keywords', [])}")
+            print(f"   interest_keywords: {keywords_json.get('interest_keywords', [])}")
+            print(f"   search_suggestions: {keywords_json.get('search_suggestions', [])}")
+            print(f"   avoid_keywords: {keywords_json.get('avoid_keywords', [])}")
+            
             logging.info(f"LLM生成的关键词: {keywords_json}")
 
             # 2) 获取行政区划代码
             adcode = self._get_adcode(keywords_json.get("city_keywords", []))
             if not adcode:
                 logging.warning("未找到有效的行政区划代码，将进行全国范围搜索")
+                print(f"⚠️  未找到有效的行政区划代码，将进行全国范围搜索")
+            else:
+                print(f"🏙️  找到行政区划代码: {adcode}")
 
             # 3) 构建分类码映射
             code_map = build_code_map(keywords_json.get("interest_keywords", []))
             if not code_map:
                 logging.warning("未找到匹配的POI分类码，将进行全类型搜索")
+                print(f"⚠️  未找到匹配的POI分类码，将进行全类型搜索")
+            else:
+                print(f"🏷️  构建分类码映射: {dict(code_map)}")
 
             # 4) 双循环POI搜索：关键词 × 兴趣类别
             pois = self.search_by_kw_and_code(
@@ -414,12 +446,14 @@ class POISearchPipeline:
                     if code_pois and "error" not in code_pois[0]:
                         total_pois += len(code_pois)
             
+            print(f"✅ POI搜索管道完成: adcode={adcode}, 分类数={len(code_map)}, 找到POI数量={total_pois}")
             logging.info(f"POI搜索管道完成: adcode={adcode}, 分类数={len(code_map)}, 找到POI数量={total_pois}")
             
             return result
             
         except Exception as e:
             logging.error(f"POI搜索管道执行失败: {e}")
+            print(f"❌ POI搜索管道执行失败: {e}")
             return {
                 "query": keywords_json if 'keywords_json' in locals() else {},
                 "adcode": adcode if 'adcode' in locals() else None,
@@ -440,6 +474,36 @@ class POISearchPipeline:
         Returns:
             搜索结果
         """
+        # 添加详细的调试信息
+        print("=" * 80)
+        print("🔍 POI搜索管线：输入数据调试")
+        print("=" * 80)
+        
+        print(f"📝 对话历史 (conversation) 长度: {len(conversation) if conversation else 0}")
+        if conversation:
+            for i, msg in enumerate(conversation):
+                role = msg.get('role', 'unknown')
+                content = msg.get('content', '')
+                print(f"  [{i}] {role}: {content[:100]}{'...' if len(content) > 100 else ''}")
+        else:
+            print("  对话历史为空")
+        
+        print(f"\n📊 会话信息 (session_info):")
+        if session_info:
+            for key, value in session_info.items():
+                if isinstance(value, (str, int, float, bool)):
+                    print(f"  {key}: {value}")
+                elif isinstance(value, list):
+                    print(f"  {key}: {value[:3]}{'...' if len(value) > 3 else ''} (长度: {len(value)})")
+                elif isinstance(value, dict):
+                    print(f"  {key}: {dict(list(value.items())[:3])}{'...' if len(value) > 3 else ''}")
+                else:
+                    print(f"  {key}: {type(value).__name__}")
+        else:
+            print("  会话信息为空")
+        
+        print("=" * 80)
+        
         return self.run(conversation, session_info)
     
     def search_by_keywords(self, keywords: Dict[str, Any]) -> Dict[str, Any]:

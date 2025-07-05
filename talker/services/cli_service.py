@@ -557,16 +557,19 @@ class CLIService:
         poi = all_pois[idx-1]
         
         # 使用POI管理服务添加POI
-        success = self.poi_service.add_poi_from_search_result(
+        result = self.poi_service.add_poi_from_search_result(
             session=self.fsm.session,
             poi_data=poi,
             source='manual'
         )
         
-        if success:
-            print(f"✅ 已将POI添加到数据库：{poi.get('name', '未知')}")
+        if result['success']:
+            if result['exists']:
+                print(f"ℹ️  POI已存在于会话：{poi.get('name', '未知')}")
+            else:
+                print(f"✅ 已将POI添加到数据库：{poi.get('name', '未知')}")
         else:
-            print(f"❌ 添加POI失败：{poi.get('name', '未知')}")
+            print(f"❌ 添加POI失败：{result['message']}")
 
     def show_session_pois(self):
         """显示会话的所有POI"""

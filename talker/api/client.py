@@ -92,6 +92,8 @@ class VivoGPT:
             )
         
         full_content = ""
+        done_sent = False
+        
         for line in response.iter_lines():
             if line:
                 line_str = line.decode('utf-8', errors='ignore')
@@ -107,6 +109,7 @@ class VivoGPT:
                             'content': full_content,
                             'full_content': full_content
                         }
+                        done_sent = True
                         return
                     
                     # 解析JSON数据
@@ -166,6 +169,14 @@ class VivoGPT:
                                     }
                     except StopIteration:
                         break
+        
+        # 如果流式响应自然结束但没有收到[DONE]标记，手动发送done信号
+        if not done_sent and full_content:
+            yield {
+                'type': 'done',
+                'content': full_content,
+                'full_content': full_content
+            }
     
     def chat(self, prompt: str, type: Optional[str] = None, temperature: float = 0.7, max_tokens: int = 2048, stream: bool = False) -> Union[Dict[str, Any], Response, Generator[Dict[str, Any], None, None]]:
         """调用蓝心大模型API（单轮对话）

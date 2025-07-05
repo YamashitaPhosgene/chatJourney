@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import xiaohongshu_summary, StateMachineView, SessionView, ChatStreamView
+from .views import xiaohongshu_summary, StateMachineView, SessionView, ChatStreamView, DestinationRecommendationView, AddPOIView, RemovePOIView, ListPOIView, BudgetAnalysisView
  
 urlpatterns = [
     path('xhs/summary/', xiaohongshu_summary, name='xhs_summary'),
@@ -7,4 +7,10 @@ urlpatterns = [
     path('session/', SessionView.as_view(), name='session'),
     path('session/<str:session_id>/', SessionView.as_view(), name='session_detail'),
     path('chat/stream/', ChatStreamView.as_view(), name='chat_stream'),
+    path('recommendations/destinations/', DestinationRecommendationView.as_view(), name='destination_recommendations'),
+    path('recommendations/destinations/<str:session_id>/', DestinationRecommendationView.as_view(), name='destination_recommendations_with_session'),
+    path('pois/add/', AddPOIView.as_view(), name='add_poi'),
+    path('pois/remove/', RemovePOIView.as_view(), name='remove_poi'),
+    path('pois/list/', ListPOIView.as_view(), name='list_pois'),
+    path('budget/analysis/', BudgetAnalysisView.as_view(), name='budget_analysis'),
 ] 

@@ -245,7 +245,6 @@ class TravelAssistantFSM:
             )
             
             for chunk in response_stream:
-                logging.debug(f"[ASK_DESTINATION_STREAM] 收到chunk: {chunk}")
                 if chunk['type'] == 'content':
                     full_content += chunk['chunk']
                     yield {
@@ -255,18 +254,13 @@ class TravelAssistantFSM:
                     }
                 elif chunk['type'] == 'done':
                     # 流式内容完成，添加到历史记录
-                    logging.info(f"[ASK_DESTINATION_STREAM] 流式完成，保存消息: {full_content[:100]}...")
                     self.add_assistant_message(full_content)
-                    logging.info(f"[ASK_DESTINATION_STREAM] ✅ 消息已保存到历史记录")
                     yield {
                         'type': 'done',
                         'full_content': full_content
                     }
                     return
                 elif chunk['type'] == 'event':
-                    yield chunk
-                else:
-                    logging.warning(f"[ASK_DESTINATION_STREAM] 未知chunk类型: {chunk['type']}")
                     yield chunk
                     
         except Exception as e:
@@ -354,13 +348,8 @@ class TravelAssistantFSM:
         
         return response_text
     
-    def ask_destination_confirm(self, user_input: str = "", silent_mode: bool = False, *args, **kwargs):
-        """确认目的地信息
-        
-        Args:
-            user_input: 用户输入
-            silent_mode: 静默模式，如果为True，则不保存到历史记录且返回None（用于状态转换预检查）
-        """
+    def ask_destination_confirm(self, user_input: str = "", *args, **kwargs):
+        """确认目的地信息"""
         logging.info("确认用户目的地信息")
         
         # 硬编码检测用户确认关键词
@@ -391,16 +380,12 @@ class TravelAssistantFSM:
         
         # 检查大模型是否返回了"END"
         if response_text.strip().upper() == "END":
-            # 大模型确认了目的地信息，直接返回"END"
+            # 大模型确认了目的地信息，不添加消息到历史记录，直接返回"END"
             return "END"
         
-        # 静默模式：不保存到历史记录，返回响应内容用于内部判断
-        if silent_mode:
-            logging.info(f"[SILENT_MODE] 确认目的地回复（不保存）: {response_text[:50]}...")
-            return response_text
-        
-        # 正常模式：保存到历史记录并返回
+        # 添加助手消息到历史记录
         self.add_assistant_message(response_text)
+        
         return response_text
     
     def ask_budget(self, *args, **kwargs):
@@ -523,13 +508,8 @@ class TravelAssistantFSM:
         
         return response_text
     
-    def ask_profile_again(self, user_input: str = "", silent_mode: bool = False, *args, **kwargs):
-        """重新询问用户画像
-        
-        Args:
-            user_input: 用户输入
-            silent_mode: 静默模式，如果为True，则不保存到历史记录（用于状态转换预检查）
-        """
+    def ask_profile_again(self, user_input: str = "", *args, **kwargs):
+        """重新询问用户画像"""
         logging.info("重新询问用户画像")
         context_info = self._prepare_context_info()
         state_info = self.session.state or {}
@@ -550,22 +530,13 @@ class TravelAssistantFSM:
         )
         response_text = response.get('data', {}).get('content', '请重新告诉我您的同行人员和旅行偏好。')
         
-        # 静默模式：不保存到历史记录
-        if silent_mode:
-            logging.info(f"[SILENT_MODE] 用户画像again回复（不保存）: {response_text[:50]}...")
-            return response_text
-        
-        # 正常模式：保存到历史记录并返回
+        # 添加助手消息到历史记录
         self.add_assistant_message(response_text)
+        
         return response_text
     
-    def ask_profile_extend(self, user_input: str = "", silent_mode: bool = False, *args, **kwargs):
-        """深化询问用户画像 - 根据用户回答进行纵向和横向拓展
-        
-        Args:
-            user_input: 用户输入
-            silent_mode: 静默模式，如果为True，则不保存到历史记录（用于状态转换预检查）
-        """
+    def ask_profile_extend(self, user_input: str = "", *args, **kwargs):
+        """深化询问用户画像 - 根据用户回答进行纵向和横向拓展"""
         logging.info("深化询问用户画像")
         context_info = self._prepare_context_info()
         state_info = self.session.state or {}
@@ -586,13 +557,9 @@ class TravelAssistantFSM:
         )
         response_text = response.get('data', {}).get('content', '请告诉我更多关于您的旅行偏好。')
         
-        # 静默模式：不保存到历史记录
-        if silent_mode:
-            logging.info(f"[SILENT_MODE] 用户画像extend回复（不保存）: {response_text[:50]}...")
-            return response_text
-        
-        # 正常模式：保存到历史记录并返回
+        # 添加助手消息到历史记录
         self.add_assistant_message(response_text)
+        
         return response_text
     
     def ask_confirmation(self, *args, **kwargs):
@@ -919,8 +886,7 @@ class TravelAssistantFSM:
                 
         elif current_state == 'SLOT_FILLING_DESTINATION_CONFIRM':
             # 确认目的地状态
-            # 使用静默模式预检查confirm结果，不暴露给前端
-            response = self.ask_destination_confirm(text, silent_mode=True)
+            response = self.ask_destination_confirm(text)
             
             # 检查大模型是否返回了"END"
             if response == "END":
@@ -954,9 +920,8 @@ class TravelAssistantFSM:
                     return self.ask_budget()
             else:
                 # 用户没有确认，继续深化询问
-                # 完全忽略confirm的回复，直接转移状态并返回deep的回复给前端
                 self.destination_not_confirmed()
-                return self.ask_destination_deep(text)
+                return response
         
         elif current_state == 'SLOT_FILLING_BUDGET':
             # 检查用户是否提供了预算信息
@@ -1027,7 +992,6 @@ class TravelAssistantFSM:
                 if not self._profile_asked_basic:
                     # 第一次询问，标记已询问基础信息
                     self._profile_asked_basic = True
-                    # 使用静默模式预检查状态转换结果，避免双重回复
                     self.slot_invalid_profile(text)  # type: ignore
                     return self.ask_profile_again(text)
                 else:
@@ -1051,7 +1015,7 @@ class TravelAssistantFSM:
                 logging.info(f"用户已提供目的地信息，转移到深化询问状态（非流式）")
                 try:
                     logging.info(f"准备执行状态转移（非流式）: user_provides_destination，当前状态: {self.state}")
-                    self.user_provides_destination(text)  # type: ignore
+                self.user_provides_destination(text)  # type: ignore
                     logging.info(f"状态转移完成（非流式），新状态: {self.state}")
                     logging.info(f"会话状态（非流式）: {self.session.state}")
                 except Exception as e:
@@ -1446,12 +1410,12 @@ class TravelAssistantFSM:
         
         logging.info(f"[ADD_USER] 添加后history长度: {len(self.session.history)}")
         
-        try:
+                try:
             self.session.save()
             logging.info(f"[ADD_USER] ✅ session已成功保存到数据库")
         except Exception as e:
-            logging.error(f"[ADD_USER] ❌ 保存session失败: {e}")
-            raise e
+            logging.error(f"[ADD_USER] ❌ 保存session到数据库失败: {e}")
+            raise
     
     def add_assistant_message(self, message: str) -> None:
         """添加助手消息到历史记录"""
@@ -1573,7 +1537,6 @@ class TravelAssistantFSM:
                     
                     # 如果需要检查END标记
                     if check_end and full_content.strip().upper() == "END":
-                        # 不保存"END"信号本身，但需要检查是否有前面的有效内容
                         yield {
                             'type': 'end',
                             'full_content': full_content
@@ -1588,7 +1551,6 @@ class TravelAssistantFSM:
                 elif chunk['type'] == 'done':
                     # 如果需要检查END标记
                     if check_end and full_content.strip().upper() == "END":
-                        # 不保存"END"信号本身
                         yield {
                             'type': 'end',
                             'full_content': full_content
@@ -1650,14 +1612,9 @@ class TravelAssistantFSM:
                 'full_content': default_response
             }
     
-    def ask_destination_deep_stream(self, user_input: str = "", silent_mode: bool = False, *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
-        """深化询问目的地（流式版本）
-        
-        Args:
-            user_input: 用户输入
-            silent_mode: 静默模式，如果为True，则收集完整回复但不yield给前端（用于状态转换预检查）
-        """
-        logging.info(f"[ASK_DESTINATION_DEEP_STREAM] 开始深化询问用户目的地（流式），user_input: {user_input[:50]}...")
+    def ask_destination_deep_stream(self, user_input: str = "", *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
+        """深化询问目的地（流式版本）"""
+        logging.info("深化询问用户目的地（流式）")
         context_info = self._prepare_context_info()
         state_info = self.session.state or {}
         collected_info = self._format_collected_info()
@@ -1687,70 +1644,43 @@ class TravelAssistantFSM:
                     # 检查大模型是否返回了"END"
                     if full_content.strip().upper() == "END":
                         logging.info(f"[STREAM] 检测到END信号，不添加到history: {full_content}")
-                        # 静默模式：不yield给前端
-                        if silent_mode:
-                            yield {
-                                'type': 'silent_end',
-                                'full_content': full_content
-                            }
-                            return
-                        else:
-                            yield {
-                                'type': 'end',
-                                'full_content': full_content
-                            }
-                            return
-                    
-                    # 静默模式：不yield内容给前端
-                    if not silent_mode:
                         yield {
-                            'type': 'content',
-                            'chunk': chunk['chunk'],
-                            'full_content': full_content
-                        }
-                elif chunk['type'] == 'done':
-                    logging.info(f"[ASK_DESTINATION_DEEP_STREAM] 流式内容完成，最终内容: {full_content}")
-                    
-                    # 再次检查大模型是否返回了"END"（以防万一）
-                    if full_content.strip().upper() == "END":
-                        logging.info(f"[ASK_DESTINATION_DEEP_STREAM] 在done阶段检测到END信号，不添加到history: {full_content}")
-                        # 静默模式：不yield给前端
-                        if silent_mode:
-                            yield {
-                                'type': 'silent_end',
-                                'full_content': full_content
-                            }
-                            return
-                        else:
-                            yield {
-                                'type': 'end',
-                                'full_content': full_content
-                            }
-                            return
-                    
-                    # 静默模式：不保存到历史记录，也不yield给前端
-                    if silent_mode:
-                        logging.info(f"[SILENT_MODE] 深化询问目的地流式回复（不保存）: {full_content[:50]}...")
-                        yield {
-                            'type': 'silent_done',
+                            'type': 'end',
                             'full_content': full_content
                         }
                         return
                     
-                    # 正常模式：保存到历史记录并yield给前端
-                    logging.info(f"[ASK_DESTINATION_DEEP_STREAM] 正在添加assistant消息到history: {full_content[:100]}...")
+                    yield {
+                        'type': 'content',
+                        'chunk': chunk['chunk'],
+                        'full_content': full_content
+                    }
+                elif chunk['type'] == 'done':
+                    logging.info(f"[STREAM] 流式内容完成，最终内容: {full_content}")
+                    
+                    # 再次检查大模型是否返回了"END"（以防万一）
+                    if full_content.strip().upper() == "END":
+                        logging.info(f"[STREAM] 在done阶段检测到END信号，不添加到history: {full_content}")
+                        yield {
+                            'type': 'end',
+                            'full_content': full_content
+                        }
+                        return
+                    
+                    # 流式内容完成，添加到历史记录
+                    logging.info(f"[STREAM] 正在添加assistant消息到history: {full_content[:100]}...")
                     try:
-                        self.add_assistant_message(full_content)
-                        logging.info(f"[ASK_DESTINATION_DEEP_STREAM] ✅ assistant消息已成功添加到history")
+                    self.add_assistant_message(full_content)
+                        logging.info(f"[STREAM] ✅ assistant消息已成功添加到history")
                         
                         # 验证是否真的添加了
                         current_history = self.get_conversation_history()
-                        logging.info(f"[ASK_DESTINATION_DEEP_STREAM] 当前history长度: {len(current_history)}")
+                        logging.info(f"[STREAM] 当前history长度: {len(current_history)}")
                         if current_history:
                             last_message = current_history[-1]
-                            logging.info(f"[ASK_DESTINATION_DEEP_STREAM] 最后一条消息: role={last_message.get('role')}, content={last_message.get('content', '')[:50]}...")
+                            logging.info(f"[STREAM] 最后一条消息: role={last_message.get('role')}, content={last_message.get('content', '')[:50]}...")
                     except Exception as e:
-                        logging.error(f"[ASK_DESTINATION_DEEP_STREAM] ❌ 添加assistant消息到history失败: {e}")
+                        logging.error(f"[STREAM] ❌ 添加assistant消息到history失败: {e}")
                     
                     yield {
                         'type': 'done',
@@ -1774,25 +1704,11 @@ class TravelAssistantFSM:
                     
                     return
                 elif chunk['type'] == 'event':
-                    # 静默模式：不yield事件给前端
-                    if not silent_mode:
-                        yield chunk
+                    yield chunk
                     
         except Exception as e:
             logging.error(f"[STREAM] 流式处理错误: {e}")
             default_response = '请告诉我更多关于您想去的地方的信息。'
-            
-            # 静默模式：不保存也不yield给前端
-            if silent_mode:
-                logging.info(f"[SILENT_MODE] 深化询问目的地错误回复（不保存）: {default_response}")
-                yield {
-                    'type': 'silent_error',
-                    'error': str(e),
-                    'full_content': default_response
-                }
-                return
-            
-            # 正常模式：保存并yield给前端
             self.add_assistant_message(default_response)
             yield {
                 'type': 'error',
@@ -1800,13 +1716,8 @@ class TravelAssistantFSM:
                 'full_content': default_response
             }
     
-    def ask_destination_confirm_stream(self, user_input: str = "", silent_mode: bool = False, *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
-        """确认目的地信息（流式版本）
-        
-        Args:
-            user_input: 用户输入
-            silent_mode: 静默模式，如果为True，则收集完整回复但不yield给前端（用于状态转换预检查）
-        """
+    def ask_destination_confirm_stream(self, user_input: str = "", *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
+        """确认目的地信息（流式版本）"""
         logging.info("确认用户目的地信息（流式）")
         
         # 硬编码检测用户确认关键词
@@ -1814,19 +1725,11 @@ class TravelAssistantFSM:
             confirm_keywords = ['确认', '是的', '对的', '可以', '进入下一阶段']
             if any(keyword in user_input for keyword in confirm_keywords):
                 logging.info(f"用户确认目的地信息: {user_input}")
-                # 静默模式：不yield给前端
-                if silent_mode:
-                    yield {
-                        'type': 'silent_end',
-                        'full_content': 'END'
-                    }
-                    return
-                else:
-                    yield {
-                        'type': 'end',
-                        'full_content': 'END'
-                    }
-                    return
+                yield {
+                    'type': 'end',
+                    'full_content': 'END'
+                }
+                return
         
         context_info = self._prepare_context_info()
         state_info = self.session.state or {}
@@ -1855,54 +1758,27 @@ class TravelAssistantFSM:
                     
                     # 检查大模型是否返回了"END"
                     if full_content.strip().upper() == "END":
-                        # 静默模式：不yield给前端
-                        if silent_mode:
-                            yield {
-                                'type': 'silent_end',
-                                'full_content': full_content
-                            }
-                            return
-                        else:
-                            yield {
-                                'type': 'end',
-                                'full_content': full_content
-                            }
-                            return
-                    
-                    # 静默模式：不yield内容给前端
-                    if not silent_mode:
                         yield {
-                            'type': 'content',
-                            'chunk': chunk['chunk'],
-                            'full_content': full_content
-                        }
-                elif chunk['type'] == 'done':
-                    # 再次检查大模型是否返回了"END"（以防万一）
-                    if full_content.strip().upper() == "END":
-                        # 静默模式：不yield给前端
-                        if silent_mode:
-                            yield {
-                                'type': 'silent_end',
-                                'full_content': full_content
-                            }
-                            return
-                        else:
-                            yield {
-                                'type': 'end',
-                                'full_content': full_content
-                            }
-                            return
-                    
-                    # 静默模式：不保存到历史记录，也不yield给前端
-                    if silent_mode:
-                        logging.info(f"[SILENT_MODE] 确认目的地流式回复（不保存）: {full_content[:50]}...")
-                        yield {
-                            'type': 'silent_done',
+                            'type': 'end',
                             'full_content': full_content
                         }
                         return
                     
-                    # 正常模式：保存到历史记录并yield给前端
+                    yield {
+                        'type': 'content',
+                        'chunk': chunk['chunk'],
+                        'full_content': full_content
+                    }
+                elif chunk['type'] == 'done':
+                    # 再次检查大模型是否返回了"END"（以防万一）
+                    if full_content.strip().upper() == "END":
+                        yield {
+                            'type': 'end',
+                            'full_content': full_content
+                        }
+                        return
+                    
+                    # 流式内容完成，添加到历史记录
                     self.add_assistant_message(full_content)
                     yield {
                         'type': 'done',
@@ -1910,25 +1786,11 @@ class TravelAssistantFSM:
                     }
                     return
                 elif chunk['type'] == 'event':
-                    # 静默模式：不yield事件给前端
-                    if not silent_mode:
-                        yield chunk
+                    yield chunk
                     
         except Exception as e:
             logging.error(f"流式处理错误: {e}")
             default_response = '请确认您的目的地信息。'
-            
-            # 静默模式：不保存也不yield给前端
-            if silent_mode:
-                logging.info(f"[SILENT_MODE] 确认目的地错误回复（不保存）: {default_response}")
-                yield {
-                    'type': 'silent_error',
-                    'error': str(e),
-                    'full_content': default_response
-                }
-                return
-            
-            # 正常模式：保存并yield给前端
             self.add_assistant_message(default_response)
             yield {
                 'type': 'error',
@@ -2096,13 +1958,8 @@ class TravelAssistantFSM:
                 'full_content': default_response
             }
     
-    def ask_profile_again_stream(self, user_input: str = "", silent_mode: bool = False, *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
-        """重新询问用户画像（流式版本）
-        
-        Args:
-            user_input: 用户输入
-            silent_mode: 静默模式，如果为True，则收集完整回复但不yield给前端（用于状态转换预检查）
-        """
+    def ask_profile_again_stream(self, user_input: str = "", *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
+        """重新询问用户画像（流式版本）"""
         logging.info("重新询问用户画像（流式）")
         context_info = self._prepare_context_info()
         state_info = self.session.state or {}
@@ -2124,55 +1981,11 @@ class TravelAssistantFSM:
                 stream=True
             )
             
-            full_content = ""
-            for chunk in response_stream:
-                if chunk['type'] == 'content':
-                    full_content += chunk['chunk']
-                    
-                    # 静默模式：不yield内容给前端
-                    if not silent_mode:
-                        yield {
-                            'type': 'content',
-                            'chunk': chunk['chunk'],
-                            'full_content': full_content
-                        }
-                elif chunk['type'] == 'done':
-                    # 静默模式：不保存到历史记录，也不yield给前端
-                    if silent_mode:
-                        logging.info(f"[SILENT_MODE] 用户画像again流式回复（不保存）: {full_content[:50]}...")
-                        yield {
-                            'type': 'silent_done',
-                            'full_content': full_content
-                        }
-                        return
-                    
-                    # 正常模式：保存到历史记录并yield给前端
-                    self.add_assistant_message(full_content)
-                    yield {
-                        'type': 'done',
-                        'full_content': full_content
-                    }
-                    return
-                elif chunk['type'] == 'event':
-                    # 静默模式：不yield事件给前端
-                    if not silent_mode:
-                        yield chunk
-                        
+            yield from self._process_stream_response(response_stream, '请重新告诉我您的同行人员和旅行偏好。')
+            
         except Exception as e:
             logging.error(f"流式处理错误: {e}")
             default_response = '请重新告诉我您的同行人员和旅行偏好。'
-            
-            # 静默模式：不保存也不yield给前端
-            if silent_mode:
-                logging.info(f"[SILENT_MODE] 用户画像again错误回复（不保存）: {default_response}")
-                yield {
-                    'type': 'silent_error',
-                    'error': str(e),
-                    'full_content': default_response
-                }
-                return
-            
-            # 正常模式：保存并yield给前端
             self.add_assistant_message(default_response)
             yield {
                 'type': 'error',
@@ -2180,13 +1993,8 @@ class TravelAssistantFSM:
                 'full_content': default_response
             }
     
-    def ask_profile_extend_stream(self, user_input: str = "", silent_mode: bool = False, *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
-        """深化询问用户画像（流式版本）
-        
-        Args:
-            user_input: 用户输入
-            silent_mode: 静默模式，如果为True，则收集完整回复但不yield给前端（用于状态转换预检查）
-        """
+    def ask_profile_extend_stream(self, user_input: str = "", *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
+        """深化询问用户画像（流式版本）"""
         logging.info("深化询问用户画像（流式）")
         context_info = self._prepare_context_info()
         state_info = self.session.state or {}
@@ -2208,55 +2016,11 @@ class TravelAssistantFSM:
                 stream=True
             )
             
-            full_content = ""
-            for chunk in response_stream:
-                if chunk['type'] == 'content':
-                    full_content += chunk['chunk']
-                    
-                    # 静默模式：不yield内容给前端
-                    if not silent_mode:
-                        yield {
-                            'type': 'content',
-                            'chunk': chunk['chunk'],
-                            'full_content': full_content
-                        }
-                elif chunk['type'] == 'done':
-                    # 静默模式：不保存到历史记录，也不yield给前端
-                    if silent_mode:
-                        logging.info(f"[SILENT_MODE] 用户画像extend流式回复（不保存）: {full_content[:50]}...")
-                        yield {
-                            'type': 'silent_done',
-                            'full_content': full_content
-                        }
-                        return
-                    
-                    # 正常模式：保存到历史记录并yield给前端
-                    self.add_assistant_message(full_content)
-                    yield {
-                        'type': 'done',
-                        'full_content': full_content
-                    }
-                    return
-                elif chunk['type'] == 'event':
-                    # 静默模式：不yield事件给前端
-                    if not silent_mode:
-                        yield chunk
-                        
+            yield from self._process_stream_response(response_stream, '请告诉我更多关于您的旅行偏好。', check_end=True)
+            
         except Exception as e:
             logging.error(f"流式处理错误: {e}")
             default_response = '请告诉我更多关于您的旅行偏好。'
-            
-            # 静默模式：不保存也不yield给前端
-            if silent_mode:
-                logging.info(f"[SILENT_MODE] 用户画像extend错误回复（不保存）: {default_response}")
-                yield {
-                    'type': 'silent_error',
-                    'error': str(e),
-                    'full_content': default_response
-                }
-                return
-            
-            # 正常模式：保存并yield给前端
             self.add_assistant_message(default_response)
             yield {
                 'type': 'error',
@@ -2488,7 +2252,6 @@ class TravelAssistantFSM:
     
     def handle_utterance_stream(self, text: str) -> Generator[Dict[str, Any], None, None]:
         """统一入口：处理用户话语，返回流式回复内容"""
-        logging.info(f"[HANDLE_UTTERANCE_STREAM] 开始处理用户输入: {text[:50]}...")
         if not self.session:
             raise ValueError("没有活跃的会话")
         
@@ -2503,41 +2266,13 @@ class TravelAssistantFSM:
         # 更新槽位数据（从session_control分析后的数据）
         self._update_slots_from_session()
         
-        # 检查是否是确认消息（与同步版本保持一致）
-        if any(keyword in text for keyword in ['确认', '正确', '可以', '是的', '对的', '进入下一阶段', '继续', '下一步']):
+        # 检查是否是确认消息
+        if any(keyword in text for keyword in ['确认', '正确', '可以', '是的', '对的', '进入下一阶段', '继续', '下一步', '差不多了', '就这样']):
             if self.state == 'SLOT_FILLING_DESTINATION_CONFIRM':
                 # 在目的地确认状态下，用户确认了目的地信息
                 self.destination_confirmed()
-                # 检查下一个槽位是否已经填充
-                if self._has_budget_info(text):
-                    # 预算也已填充，继续检查下一个
-                    if self._has_dates_info(text):
-                        # 日期也已填充，继续检查下一个
-                        if self._has_profile_info(text):
-                            # 用户画像也已填充，直接进入确认状态
-                            self.machine.set_state('CONFIRMATION')
-                            # 手动触发状态进入处理函数
-                            self._on_enter_confirmation()
-                            yield from self.ask_confirmation_stream()
-                            return
-                        else:
-                            # 用户画像未填充，转移到用户画像状态
-                            self.machine.set_state('SLOT_FILLING_PROFILE')
-                            # 手动触发状态进入回调
-                            self._on_enter_fill_profile()
-                            yield from self.ask_profile_stream()
-                            return
-                    else:
-                        # 日期未填充，转移到日期状态
-                        self.machine.set_state('SLOT_FILLING_DATES')
-                        # 手动触发状态进入回调
-                        self._on_enter_fill_dates()
-                        yield from self.ask_dates_stream()
-                        return
-                else:
-                    # 预算未填充，转移到预算状态
-                    yield from self.ask_budget_stream()
-                    return
+                yield from self.ask_budget_stream()
+                return
             elif self._are_all_slots_filled():
                 if self.state != 'CONFIRMATION':
                     self.machine.set_state('CONFIRMATION')
@@ -2570,7 +2305,7 @@ class TravelAssistantFSM:
         elif current_state == 'SLOT_FILLING_DESTINATION_DEEP':
             # 深化目的地询问状态
             # 首先检查用户是否表达了确认或进入下一阶段的意图
-            if any(keyword in text for keyword in ['确认', '正确', '可以', '是的', '对的', '进入下一阶段', '继续', '下一步']):
+            if any(keyword in text for keyword in ['确认', '正确', '可以', '是的', '对的', '进入下一阶段', '继续', '下一步', '差不多了', '就这样']):
                 # 用户表达了确认意图，转移到确认状态
                 self.destination_deep_complete()
                 yield from self.ask_destination_confirm_stream()
@@ -2581,127 +2316,41 @@ class TravelAssistantFSM:
             has_end = False
             
             for chunk in self.ask_destination_deep_stream(text):
-                if chunk['type'] == 'end' or chunk['type'] == 'silent_end':
+                if chunk['type'] == 'end':
                     # 大模型确认了目的地信息，转移到确认状态
                     has_end = True
-                    full_content = chunk.get('full_content', full_content)
                     break
                 elif chunk['type'] == 'content':
                     full_content += chunk.get('chunk', '')
                     yield chunk
-                elif chunk['type'] == 'done':
-                    # 正常完成，获取完整内容
-                    full_content = chunk.get('full_content', full_content)
-                    yield chunk
                 else:
                     yield chunk
             
-            # 如果检测到END，确保消息被保存后再进行状态转换
+            # 如果检测到END，进行状态转换
             if has_end:
-                # 确保END响应被保存到历史记录（但内容应该是实际的回复而不是"END"）
-                if full_content and full_content.strip().upper() != "END":
-                    # 如果有实际内容，保存它
-                    self.add_assistant_message(full_content)
-                    logging.info(f"[STREAM] 手动保存END前的消息到历史: {full_content[:50]}...")
-                
                 self.destination_deep_complete()
                 yield from self.ask_destination_confirm_stream()
                 return
             
         elif current_state == 'SLOT_FILLING_DESTINATION_CONFIRM':
             # 目的地确认状态
-            # 使用静默模式预检查confirm结果，不暴露给前端
-            full_content = ""
-            has_end = False
-            
-            for chunk in self.ask_destination_confirm_stream(text, silent_mode=True):
-                if chunk['type'] == 'end' or chunk['type'] == 'silent_end':
-                    # 大模型确认了目的地信息，转移到下一个状态
-                    has_end = True
-                    full_content = chunk.get('full_content', full_content)
-                    break
-                elif chunk['type'] == 'silent_done':
-                    # 静默模式完成，获取完整内容但不yield给前端
-                    full_content = chunk.get('full_content', full_content)
-                    break
-                elif chunk['type'] == 'silent_error':
-                    # 静默模式错误，获取默认内容但不yield给前端
-                    full_content = chunk.get('full_content', '')
-                    break
-                # 静默模式下不应该有其他类型的chunk被yield
-            
-            # 如果检测到END，进行状态转换
-            if has_end:
-                # 确保END响应被保存到历史记录（但内容应该是实际的回复而不是"END"）
-                if full_content and full_content.strip().upper() != "END":
-                    # 如果有实际内容，保存它
-                    self.add_assistant_message(full_content)
-                    logging.info(f"[STREAM] 手动保存END前的消息到历史: {full_content[:50]}...")
-                
+            if any(keyword in text for keyword in ['确认', '正确', '可以', '是的', '对的', '进入下一阶段', '继续', '下一步', '差不多了', '就这样']):
+                # 用户确认了目的地信息
                 self.destination_confirmed()
-                # 检查下一个槽位是否已经填充
-                if self._has_budget_info(text):
-                    # 预算也已填充，继续检查下一个
-                    if self._has_dates_info(text):
-                        # 日期也已填充，继续检查下一个
-                        if self._has_profile_info(text):
-                            # 用户画像也已填充，直接进入确认状态
-                            self.machine.set_state('CONFIRMATION')
-                            # 手动触发状态进入处理函数
-                            self._on_enter_confirmation()
-                            yield from self.ask_confirmation_stream()
-                            return
-                        else:
-                            # 用户画像未填充，转移到用户画像状态
-                            self.machine.set_state('SLOT_FILLING_PROFILE')
-                            # 手动触发状态进入回调
-                            self._on_enter_fill_profile()
-                            yield from self.ask_profile_stream()
-                            return
-                    else:
-                        # 日期未填充，转移到日期状态
-                        self.machine.set_state('SLOT_FILLING_DATES')
-                        # 手动触发状态进入回调
-                        self._on_enter_fill_dates()
-                        yield from self.ask_dates_stream()
-                        return
-                else:
-                    # 预算未填充，转移到预算状态
-                    yield from self.ask_budget_stream()
-                    return
+                yield from self.ask_budget_stream()
+                return
             else:
                 # 用户没有确认，继续深化询问
-                # 完全忽略confirm的静默回复，直接转移状态并yield deep的回复给前端
-                self.destination_not_confirmed()
-                yield from self.ask_destination_deep_stream(text)
+                yield from self.ask_destination_confirm_stream(text)
                 return
                 
         elif current_state == 'SLOT_FILLING_BUDGET':
             # 检查用户是否提供了预算信息
             if self._has_budget_info(text):
-                # 用户提供了预算信息，转移到下一个状态
+                # 用户提供了预算信息，转移到日期询问状态
                 self.user_provides_budget(text)  # type: ignore
-                # 检查下一个槽位是否已经填充
-                if self._has_dates_info(text):
-                    # 日期也已填充，继续检查下一个
-                    if self._has_profile_info(text):
-                        # 用户画像也已填充，直接进入确认状态
-                        self.machine.set_state('CONFIRMATION')
-                        # 手动触发状态进入处理函数
-                        self._on_enter_confirmation()
-                        yield from self.ask_confirmation_stream()
-                        return
-                    else:
-                        # 用户画像未填充，转移到用户画像状态
-                        self.machine.set_state('SLOT_FILLING_PROFILE')
-                        # 手动触发状态进入回调
-                        self._on_enter_fill_profile()
-                        yield from self.ask_profile_stream()
-                        return
-                else:
-                    # 日期未填充，转移到日期状态
-                    yield from self.ask_dates_stream()
-                    return
+                yield from self.ask_dates_stream()
+                return
             else:
                 # 用户没有提供预算信息，重新询问
                 self.slot_invalid_budget(text)  # type: ignore
@@ -2711,20 +2360,10 @@ class TravelAssistantFSM:
         elif current_state == 'SLOT_FILLING_DATES':
             # 检查用户是否提供了日期信息
             if self._has_dates_info(text):
-                # 用户提供了日期信息，转移到下一个状态
+                # 用户提供了日期信息，转移到用户画像询问状态
                 self.user_provides_dates(text)  # type: ignore
-                # 检查下一个槽位是否已经填充
-                if self._has_profile_info(text):
-                    # 用户画像也已填充，直接进入确认状态
-                    self.machine.set_state('CONFIRMATION')
-                    # 手动触发状态进入处理函数
-                    self._on_enter_confirmation()
-                    yield from self.ask_confirmation_stream()
-                    return
-                else:
-                    # 用户画像未填充，转移到用户画像状态
-                    yield from self.ask_profile_stream()
-                    return
+                yield from self.ask_profile_stream()
+                return
             else:
                 # 用户没有提供日期信息，重新询问
                 self.slot_invalid_dates(text)  # type: ignore
@@ -2753,48 +2392,18 @@ class TravelAssistantFSM:
             else:
                 # 用户没有提供用户画像信息，检查是否已经进行过基础询问
                 if not self._profile_asked_basic:
+                    self._profile_asked_basic = False
+                
+                if not self._profile_asked_basic:
                     # 第一次询问，标记已询问基础信息
                     self._profile_asked_basic = True
-                    # 使用静默模式预检查状态转换结果，避免双重回复
-                    # 执行状态转换但不收集结果（因为是自循环）
                     self.slot_invalid_profile(text)  # type: ignore
-                    # 直接yield profile_again的结果给前端
                     yield from self.ask_profile_again_stream(text)
                     return
                 else:
                     # 已经询问过基础信息，进行深化询问
-                    # 收集完整的响应流，检查是否有END标记
-                    full_content = ""
-                    has_end = False
-                    
-                    for chunk in self.ask_profile_extend_stream(text):
-                        if chunk['type'] == 'end' or chunk['type'] == 'silent_end':
-                            # 大模型确认了用户画像信息，转移到确认状态
-                            has_end = True
-                            full_content = chunk.get('full_content', full_content)
-                            break
-                        elif chunk['type'] == 'content':
-                            full_content += chunk.get('chunk', '')
-                            yield chunk
-                        elif chunk['type'] == 'done':
-                            # 正常完成，获取完整内容
-                            full_content = chunk.get('full_content', full_content)
-                            yield chunk
-                        else:
-                            yield chunk
-                    
-                    # 如果检测到END，转移到确认状态
-                    if has_end:
-                        # 确保END响应被保存到历史记录
-                        if full_content and full_content.strip().upper() != "END":
-                            self.add_assistant_message(full_content)
-                            logging.info(f"[STREAM] 手动保存END前的消息到历史: {full_content[:50]}...")
-                        
-                        self.user_provides_profile(text)  # type: ignore
-                        yield from self.ask_confirmation_stream()
-                        return
-                    else:
-                        return
+                    yield from self.ask_profile_extend_stream(text)
+                    return
                 
         elif current_state == 'CONFIRMATION':
             # 确认状态
@@ -2810,11 +2419,9 @@ class TravelAssistantFSM:
                 
         elif current_state == 'COMPLETED':
             # 完成状态，可以重新开始或处理其他请求
-            completed_msg = '旅行计划已完成，如需重新规划请告诉我。'
-            self.add_assistant_message(completed_msg)
             yield {
                 'type': 'completed',
-                'full_content': completed_msg
+                'full_content': '旅行计划已完成，如需重新规划请告诉我。'
             }
             return
             
@@ -2827,35 +2434,32 @@ class TravelAssistantFSM:
             # 处理其他状态（包括INIT）
             # 特殊处理INIT状态
             if current_state == 'INIT':
-                logging.info(f"[HANDLE_UTTERANCE_STREAM] 处理INIT状态，用户输入: {text[:50]}...")
+                logging.info(f"处理INIT状态，用户输入: {text[:50]}...")
                 # 首次对话，进入目的地询问流程并手动触发状态进入处理
-                logging.info(f"[HANDLE_UTTERANCE_STREAM] 从INIT转移到SLOT_FILLING_DESTINATION")
+                logging.info(f"从INIT转移到SLOT_FILLING_DESTINATION")
                 self.machine.set_state('SLOT_FILLING_DESTINATION')
-                logging.info(f"[HANDLE_UTTERANCE_STREAM] 状态转移后，当前状态: {self.state}")
+                logging.info(f"状态转移后，当前状态: {self.state}")
                 # 手动触发状态进入处理函数，确保状态被正确保存
-                logging.info(f"[HANDLE_UTTERANCE_STREAM] 手动触发状态进入处理函数")
+                logging.info(f"手动触发状态进入处理函数")
                 self._on_enter_fill_destination()
-                logging.info(f"[HANDLE_UTTERANCE_STREAM] 状态进入处理函数执行完成，会话状态: {self.session.state}")
+                logging.info(f"状态进入处理函数执行完成，会话状态: {self.session.state}")
                 # 检查用户输入是否已经包含目的地信息
-                has_dest_info = self._has_destination_info(text, check_deep_process=False)
-                logging.info(f"[HANDLE_UTTERANCE_STREAM] _has_destination_info返回: {has_dest_info}")
-                if has_dest_info:
+                if self._has_destination_info(text, check_deep_process=False):
                     # 用户提供了目的地信息，转移到深化询问状态
-                    logging.info(f"[HANDLE_UTTERANCE_STREAM] 用户已提供目的地信息，转移到深化询问状态")
+                    logging.info(f"用户已提供目的地信息，转移到深化询问状态")
                     try:
-                        logging.info(f"[HANDLE_UTTERANCE_STREAM] 准备执行状态转移: user_provides_destination，当前状态: {self.state}")
-                        self.user_provides_destination(text)  # type: ignore
-                        logging.info(f"[HANDLE_UTTERANCE_STREAM] 状态转移完成，新状态: {self.state}")
-                        logging.info(f"[HANDLE_UTTERANCE_STREAM] 会话状态: {self.session.state}")
+                        logging.info(f"准备执行状态转移: user_provides_destination，当前状态: {self.state}")
+                    self.user_provides_destination(text)  # type: ignore
+                        logging.info(f"状态转移完成，新状态: {self.state}")
+                        logging.info(f"会话状态: {self.session.state}")
                     except Exception as e:
-                        logging.error(f"[HANDLE_UTTERANCE_STREAM] 状态转移失败: {e}")
+                        logging.error(f"状态转移失败: {e}")
                         raise e
-                    logging.info(f"[HANDLE_UTTERANCE_STREAM] 调用 ask_destination_deep_stream")
                     yield from self.ask_destination_deep_stream(text)
                     return
                 else:
                     # 用户没有提供目的地信息，询问目的地
-                    logging.info(f"[HANDLE_UTTERANCE_STREAM] 用户未提供目的地信息，调用 ask_destination_stream")
+                    logging.info(f"用户未提供目的地信息，询问目的地")
                     yield from self.ask_destination_stream()
                     return
             

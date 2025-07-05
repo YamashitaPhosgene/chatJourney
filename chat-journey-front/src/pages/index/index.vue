@@ -191,7 +191,14 @@
               </template>
               <template v-else>
                 <view class="message-content">
-                  <text>{{ message.content }}</text>
+                  <!-- 使用Markdown渲染组件显示AI回复 -->
+                  <template v-if="message.type === 'ai'">
+                    <MarkdownRenderer :content="message.content" />
+                  </template>
+                  <!-- 用户消息仍使用普通文本 -->
+                  <template v-else>
+                    <text>{{ message.content }}</text>
+                  </template>
                   <view class="message-footer">
                   <text class="message-time">{{ message.time }}</text>
                     <view v-if="message.isStreaming" class="streaming-indicator">
@@ -255,10 +262,10 @@
     <view
       class="jigsaw-fab"
       v-if="
-        !showWelcome &&
-        (jigsawType === 'location' ||
-          jigsawType === 'budget' ||
-          (jigsawType === 'itinerary' && itinerary.length))
+        jigsawType === 'location' ||
+        jigsawType === 'budget' ||
+        jigsawType === 'itinerary' ||
+        jigsawType === 'my_pois'
       "
       @tap="toggleJigsaw"
     >
@@ -273,7 +280,50 @@
           <view class="jigsaw-subtitle">
             <template v-if="jigsawType === 'location'">猜你想去</template>
             <template v-else-if="jigsawType === 'budget'">预算分配</template>
+            <template v-else-if="jigsawType === 'my_pois'">我的POI</template>
             <template v-else>预览攻略</template>
+          </view>
+          
+          <!-- 标签页导航 -->
+          <view class="jigsaw-tabs">
+            <view 
+              class="jigsaw-tab"
+              :class="{ active: jigsawType === 'location' }"
+              @tap="switchJigsawType('location')"
+            >
+              推荐
+            </view>
+            <view 
+              class="jigsaw-tab"
+              :class="{ active: jigsawType === 'my_pois' }"
+              @tap="switchJigsawType('my_pois')"
+            >
+              我的POI
+            </view>
+            <view 
+              class="jigsaw-tab"
+              :class="{ active: jigsawType === 'budget' }"
+              @tap="switchJigsawType('budget')"
+            >
+              预算
+            </view>
+            <view 
+              class="jigsaw-tab"
+              :class="{ active: jigsawType === 'itinerary' }"
+              @tap="switchJigsawType('itinerary')"
+            >
+              行程
+            </view>
+          </view>
+          
+          <!-- 会话状态信息 -->
+          <view v-if="sessionInfo && sessionInfo.collected_info && sessionInfo.collected_info.length > 0" class="session-status">
+            <view class="status-title">已收集信息：</view>
+            <view class="status-items">
+              <view v-for="info in sessionInfo.collected_info" :key="info" class="status-item">
+                {{ info }}
+              </view>
+            </view>
           </view>
         </view>
         <scroll-view
@@ -282,58 +332,316 @@
           :style="{ height: '100%' }"
         >
           <template v-if="jigsawType === 'location'">
-            <view
-              v-for="(item, idx) in locationJigsawData"
-              :key="idx"
-              style="margin-bottom: 18px"
-            >
+            <!-- Loading状态 -->
+            <template v-if="locationJigsawLoading">
               <view
                 style="
-                  display: flex;
-                  background: #fff;
+                  text-align: center;
+                  padding: 60px 20px;
+                  background: #f8f9fa;
                   border-radius: 16px;
-                  box-shadow: 0 2px 8px rgba(60, 89, 107, 0.08);
-                  padding: 10px 14px;
-                  align-items: center;
+                  margin: 20px 0;
                 "
               >
-                <image
-                  :src="item.image"
+                <view style="font-size: 48px; margin-bottom: 16px">
+                  <image
+                    src="/static/icons/loading.svg"
+                    style="width: 48px; height: 48px; animation: spin 1s linear infinite;"
+                  />
+                </view>
+                <view
                   style="
-                    width: 70px;
-                    height: 50px;
-                    border-radius: 10px;
-                    object-fit: cover;
-                    margin-right: 12px;
+                    font-size: 16px;
+                    color: #2c4a52;
+                    font-weight: bold;
+                    margin-bottom: 8px;
                   "
-                />
-                <view style="flex: 1">
-                  <view
+                  >正在获取推荐数据...</view
+                >
+                <view style="font-size: 14px; color: #888; line-height: 1.4">
+                  请稍候，我正在为您搜索合适的目的地
+                </view>
+              </view>
+            </template>
+            
+            <!-- 有推荐数据时显示 -->
+            <template v-else-if="locationJigsawData.length > 0">
+              <!-- POI推荐卡片 -->
+              <view
+                v-for="(item, idx) in getCurrentPageData()"
+                :key="idx"
+                style="margin-bottom: 18px"
+              >
+                <view
+                  @click="selectPoi(item)"
+                  :style="{
+                    display: 'flex',
+                    background: '#fff',
+                    borderRadius: '16px',
+                    boxShadow: '0 2px 8px rgba(60, 89, 107, 0.08)',
+                    padding: '10px 14px',
+                    alignItems: 'center',
+                    border: selectedPoi && selectedPoi.poi_id === item.poi_id ? '2px solid #4f7063' : '2px solid transparent',
+                    cursor: 'pointer'
+                  }"
+                >
+                  <image
+                    :src="item.image"
+                    @error="handleImageError"
                     style="
-                      font-weight: bold;
-                      font-size: 15px;
-                      color: #2c4a52;
-                      margin-bottom: 2px;
+                      width: 70px;
+                      height: 50px;
+                      border-radius: 10px;
+                      object-fit: cover;
+                      margin-right: 12px;
                     "
-                    >{{ item.title }}</view
-                  >
-                  <view style="font-size: 13px; color: #888; margin-bottom: 2px"
-                    >评分：{{ item.score }}分</view
-                  >
-                  <view
+                  />
+                  <view style="flex: 1">
+                    <view
+                      style="
+                        font-weight: bold;
+                        font-size: 15px;
+                        color: #2c4a52;
+                        margin-bottom: 2px;
+                      "
+                      >{{ item.title }}</view
+                    >
+                    <view style="font-size: 13px; color: #888; margin-bottom: 2px"
+                      >评分：{{ item.score }}分</view
+                    >
+                    <view v-if="item.type && item.type.trim()" style="font-size: 12px; color: #666; margin-bottom: 2px"
+                      >类型：{{ item.type }}</view
+                    >
+                    <view v-if="item.address && item.address.trim()" style="font-size: 12px; color: #666; margin-bottom: 2px"
+                      >地址：{{ item.address }}</view
+                    >
+                  </view>
+                  
+                  <!-- 加入按钮 -->
+                  <view 
+                    v-if="selectedPoi && selectedPoi.poi_id === item.poi_id"
+                    @click.stop="addPOIToSession(item)"
                     style="
+                      background: #4f7063;
+                      color: white;
+                      padding: 8px 16px;
+                      border-radius: 8px;
+                      font-size: 14px;
+                      font-weight: 500;
+                      margin-left: 8px;
                       display: flex;
                       align-items: center;
-                      font-size: 12px;
-                      color: #888;
+                      box-shadow: 0 2px 4px rgba(79, 112, 99, 0.3);
                     "
                   >
-                    <view style="margin-right: 10px">{{ item.traffic }}</view>
-                    <view>{{ item.weather }}</view>
+                    加入
                   </view>
                 </view>
               </view>
-            </view>
+              
+              <!-- 分页控件 -->
+              <view v-if="getTotalPages() > 1" style="
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                gap: 12px;
+                padding: 16px 0;
+                margin-top: 8px;
+              ">
+                <!-- 上一页按钮 -->
+                <view 
+                  @tap="prevPage"
+                  :class="['pagination-btn', { disabled: currentPage === 1 }]"
+                  style="
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 8px;
+                    background: #f0f0f0;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 14px;
+                    color: #666;
+                  "
+                >
+                  ‹
+                </view>
+                
+                <!-- 页码指示器 -->
+                <view style="
+                  display: flex;
+                  align-items: center;
+                  font-size: 14px;
+                  color: #666;
+                ">
+                  {{ currentPage }} / {{ getTotalPages() }}
+                </view>
+                
+                <!-- 下一页按钮 -->
+                <view 
+                  @tap="nextPage"
+                  :class="['pagination-btn', { disabled: currentPage === getTotalPages() }]"
+                  style="
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 8px;
+                    background: #f0f0f0;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 14px;
+                    color: #666;
+                  "
+                >
+                  ›
+                </view>
+              </view>
+            </template>
+            
+            <!-- 没有推荐数据时显示空状态 -->
+            <template v-else>
+              <view
+                style="
+                  text-align: center;
+                  padding: 60px 20px;
+                  background: #f8f9fa;
+                  border-radius: 16px;
+                  margin: 20px 0;
+                "
+              >
+                <view style="font-size: 48px; margin-bottom: 16px">🗺️</view>
+                <view
+                  style="
+                    font-size: 16px;
+                    color: #2c4a52;
+                    font-weight: bold;
+                    margin-bottom: 8px;
+                  "
+                  >暂无目的地推荐</view
+                >
+                <view style="font-size: 14px; color: #888; line-height: 1.4">
+                  <template v-if="!sessionId">开始对话后将为您推荐合适的目的地</template>
+                  <template v-else>请告诉我您的旅行偏好，我来为您推荐目的地</template>
+                </view>
+              </view>
+            </template>
+          </template>
+          <template v-else-if="jigsawType === 'my_pois'">
+            <!-- 我的POI列表 -->
+            <template v-if="myPoisData.length > 0">
+              <view
+                v-for="(poi, idx) in myPoisData"
+                :key="poi.id"
+                style="margin-bottom: 18px"
+              >
+                <view
+                  style="
+                    display: flex;
+                    background: #fff;
+                    border-radius: 16px;
+                    box-shadow: 0 2px 8px rgba(60, 89, 107, 0.08);
+                    padding: 10px 14px;
+                    align-items: center;
+                  "
+                >
+                  <image
+                    :src="poi.image"
+                    @error="handleImageError"
+                    style="
+                      width: 70px;
+                      height: 50px;
+                      border-radius: 10px;
+                      object-fit: cover;
+                      margin-right: 12px;
+                    "
+                  />
+                  <view style="flex: 1">
+                    <view
+                      style="
+                        font-weight: bold;
+                        font-size: 15px;
+                        color: #2c4a52;
+                        margin-bottom: 2px;
+                      "
+                    >{{ poi.name }}</view>
+                    <view style="font-size: 13px; color: #888; margin-bottom: 2px"
+                      >评分：{{ poi.score != null && poi.score !== undefined ? poi.score : 4.5 }}分</view>
+                    <view v-if="poi.type && poi.type.trim()" style="font-size: 12px; color: #666; margin-bottom: 2px"
+                      >类型：{{ poi.type }}</view>
+                    <view v-if="poi.address && poi.address.trim()" style="font-size: 12px; color: #666; margin-bottom: 2px"
+                      >地址：{{ poi.address }}</view>
+                  </view>
+                  
+                  <!-- 删除按钮 -->
+                  <view 
+                    @click="removePOIFromSession(poi)"
+                    style="
+                      background: #dc3545;
+                      color: white;
+                      padding: 8px 16px;
+                      border-radius: 8px;
+                      font-size: 14px;
+                      font-weight: 500;
+                      margin-left: 8px;
+                      display: flex;
+                      align-items: center;
+                      box-shadow: 0 2px 4px rgba(220, 53, 69, 0.3);
+                    "
+                  >
+                    删除
+                  </view>
+                </view>
+              </view>
+              
+              <!-- POI统计信息 -->
+              <view
+                style="
+                  background: #f8f9fa;
+                  border-radius: 16px;
+                  padding: 16px;
+                  margin-top: 20px;
+                  border: 1px solid #e9ecef;
+                "
+              >
+                <view
+                  style="
+                    font-weight: bold;
+                    font-size: 15px;
+                    color: #2c4a52;
+                    margin-bottom: 8px;
+                  "
+                >POI统计</view>
+                <view style="font-size: 13px; color: #666; line-height: 1.5">
+                  总计：{{ myPoisData.length }}个POI
+                </view>
+              </view>
+            </template>
+            
+            <!-- 没有POI时显示空状态 -->
+            <template v-else>
+              <view
+                style="
+                  text-align: center;
+                  padding: 60px 20px;
+                  background: #f8f9fa;
+                  border-radius: 16px;
+                  margin: 20px 0;
+                "
+              >
+                <view style="font-size: 48px; margin-bottom: 16px">📍</view>
+                <view
+                  style="
+                    font-size: 16px;
+                    color: #2c4a52;
+                    font-weight: bold;
+                    margin-bottom: 8px;
+                  "
+                >暂无已加入的POI</view>
+                <view style="font-size: 14px; color: #888; line-height: 1.4">
+                  在推荐页面点击"加入"按钮添加POI
+                </view>
+              </view>
+            </template>
           </template>
           <template v-else-if="jigsawType === 'budget'">
             <view
@@ -345,6 +653,7 @@
                 margin-bottom: 18px;
               "
             >
+              <!-- 预算状态标题 -->
               <view
                 style="
                   font-weight: bold;
@@ -352,38 +661,53 @@
                   color: #2c4a52;
                   margin-bottom: 10px;
                 "
-                >预算分配</view
               >
-              <view
-                v-for="item in budgetJigsawData.chart"
-                :key="item.name"
-                style="margin-bottom: 12px"
-              >
-                <view style="display: flex; align-items: center">
-                  <view style="width: 60px; color: #2c4a52; font-size: 14px">{{
-                    item.name
-                  }}</view>
-                  <input
-                    type="number"
-                    v-model.number="budgetJigsawData[item.name]"
-                    style="
-                      flex: 1;
-                      margin: 0 8px;
-                      border: 1px solid #ddd;
-                      border-radius: 8px;
-                      padding: 0 12px;
-                      font-size: 14px;
-                      color: #2c4a52;
-                      background: #fff;
-                      height: 36px;
-                    "
-                    min="0"
-                    max="10000"
-                  />
-                  <view style="color: #888; font-size: 13px">元</view>
+                <template v-if="budgetJigsawData.budget_type === 'empty'">
+                  预算待设置
+                </template>
+                <template v-else-if="budgetJigsawData.budget_type === 'specific'">
+                  预算分配 (总预算: {{ budgetJigsawData.budget_value }}元)
+                </template>
+                <template v-else-if="budgetJigsawData.budget_type === 'range'">
+                  预算分配 (范围: {{ budgetJigsawData.budget_min }}-{{ budgetJigsawData.budget_max }}元)
+                </template>
+                <template v-else-if="budgetJigsawData.budget_type === 'unlimited'">
+                  预算分配 (不限预算)
+                </template>
+                <template v-else-if="budgetJigsawData.budget_type === 'limited'">
+                  预算分配 (预算有限)
+                </template>
+                <template v-else>
+                  预算分配
+                </template>
+              </view>
+              
+              <!-- 预算概览 -->
+              <view v-if="budgetJigsawData.total_considered > 0" style="margin-bottom: 15px; padding: 12px; background: #fff; border-radius: 8px;">
+                <view style="font-size: 14px; color: #2c4a52; margin-bottom: 8px;">
+                  <text style="font-weight: bold;">已考虑预算：</text>
+                  <text style="color: #f7a35c;">{{ budgetJigsawData.total_considered }}元</text>
+                </view>
+                <view v-if="budgetJigsawData.budget_type === 'specific' && budgetJigsawData.remaining_budget > 0" style="font-size: 14px; color: #2c4a52;">
+                  <text style="font-weight: bold;">剩余预算：</text>
+                  <text style="color: #8fd3c7;">{{ budgetJigsawData.remaining_budget }}元</text>
+                </view>
+                <view v-if="budgetJigsawData.budget_type === 'range'" style="font-size: 14px; color: #2c4a52;">
+                  <text style="font-weight: bold;">预算状态：</text>
+                  <text v-if="budgetJigsawData.total_considered <= budgetJigsawData.budget_min" style="color: #8fd3c7;">
+                    在预期范围内
+                  </text>
+                  <text v-else-if="budgetJigsawData.total_considered <= budgetJigsawData.budget_max" style="color: #f7a35c;">
+                    超出最低预算，但在可接受范围内
+                  </text>
+                  <text v-else style="color: #ff6b6b;">
+                    超出最高预算
+                  </text>
                 </view>
               </view>
-              <view style="margin-top: 18px">
+              
+              <!-- 预算分布图 -->
+              <view style="margin-bottom: 18px;">
                 <view
                   style="
                     font-weight: bold;
@@ -391,47 +715,115 @@
                     color: #2c4a52;
                     margin-bottom: 10px;
                   "
-                  >预算分布图</view
-                >
-                <svg width="120" height="120" viewBox="0 0 120 120">
-                  <circle
-                    v-for="(item, idx) in budgetJigsawData.chart"
-                    :key="idx"
-                    :stroke="item.color"
-                    stroke-width="16"
-                    fill="none"
-                    :stroke-dasharray="getBudgetChartDasharray(idx)"
-                    :stroke-dashoffset="getBudgetChartOffset(idx)"
-                    cx="60"
-                    cy="60"
-                    r="50"
-                    transform="rotate(-90 60 60)"
-                  />
-                </svg>
-                <view style="margin-left: 16px">
-                  <view
-                    v-for="(item, idx) in budgetJigsawData.chart"
-                    :key="idx"
-                    style="
-                      font-size: 13px;
-                      color: #2c4a52;
-                      margin-bottom: 4px;
-                      display: flex;
-                      align-items: center;
-                    "
-                  >
+                >预算分布图</view>
+                
+                <view style="display: flex; align-items: center;">
+                  <!-- 饼图 -->
+                  <svg width="120" height="120" viewBox="0 0 120 120" style="margin-right: 20px;">
+                    <circle
+                      v-for="(item, idx) in budgetJigsawData.chart"
+                      :key="idx"
+                      :stroke="item.color"
+                      stroke-width="16"
+                      fill="none"
+                      :stroke-dasharray="getBudgetChartDasharray(idx)"
+                      :stroke-dashoffset="getBudgetChartOffset(idx)"
+                      cx="60"
+                      cy="60"
+                      r="50"
+                      transform="rotate(-90 60 60)"
+                    />
+                    <!-- 中心文字 -->
+                    <text x="60" y="55" text-anchor="middle" style="font-size: 12px; fill: #2c4a52; font-weight: bold;">
+                      {{ budgetJigsawData.budget_type === 'empty' ? '预算' : (budgetJigsawData.budget_type === 'specific' ? '总预算' : '已考虑') }}
+                    </text>
+                    <text x="60" y="70" text-anchor="middle" style="font-size: 14px; fill: #f7a35c; font-weight: bold;">
+                      {{ budgetJigsawData.budget_type === 'empty' ? '未设置' : (budgetJigsawData.budget_type === 'specific' ? budgetJigsawData.budget_value + '元' : budgetJigsawData.total_considered + '元') }}
+                    </text>
+                  </svg>
+                  
+                  <!-- 图例 -->
+                  <view style="flex: 1;">
                     <view
-                      :style="{
-                        width: '12px',
-                        height: '12px',
-                        background: item.color,
-                        borderRadius: '6px',
-                        display: 'inline-block',
-                        marginRight: '6px',
-                      }"
-                    ></view>
-                    {{ item.name }}：{{ item.value }}元
+                      v-for="(item, idx) in budgetJigsawData.chart"
+                      :key="idx"
+                      style="
+                        font-size: 13px;
+                        color: #2c4a52;
+                        margin-bottom: 6px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                      "
+                    >
+                      <view style="display: flex; align-items: center;">
+                        <view
+                          :style="{
+                            width: '12px',
+                            height: '12px',
+                            background: item.color,
+                            borderRadius: '6px',
+                            display: 'inline-block',
+                            marginRight: '6px',
+                          }"
+                        ></view>
+                        <text>{{ item.name }}</text>
+                      </view>
+                      <text style="font-weight: bold;">{{ budgetJigsawData.budget_type === 'empty' ? '' : item.value + '元' }}</text>
+                    </view>
                   </view>
+                </view>
+              </view>
+              
+              <!-- POI费用详情 -->
+              <view v-if="budgetJigsawData.poi_costs && budgetJigsawData.poi_costs.length > 0" style="margin-top: 15px;">
+                <view
+                  style="
+                    font-weight: bold;
+                    font-size: 15px;
+                    color: #2c4a52;
+                    margin-bottom: 10px;
+                  "
+                >POI费用详情</view>
+                <view
+                  v-for="poi in budgetJigsawData.poi_costs"
+                  :key="poi.name"
+                  style="
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 8px 12px;
+                    background: #fff;
+                    border-radius: 6px;
+                    margin-bottom: 6px;
+                  "
+                >
+                  <view>
+                    <view style="font-size: 14px; color: #2c4a52; font-weight: bold;">{{ poi.name }}</view>
+                    <view style="font-size: 12px; color: #888;">{{ poi.category }} · {{ poi.type }}</view>
+                  </view>
+                  <view style="text-align: right;">
+                    <view style="font-size: 14px; color: #f7a35c; font-weight: bold;">{{ poi.cost }}元</view>
+                    <view style="font-size: 11px; color: #888;">{{ poi.cost_str }}</view>
+                  </view>
+                </view>
+              </view>
+              
+              <!-- 预算调整提示 -->
+              <view v-if="budgetJigsawData.budget_type === 'range' && budgetJigsawData.total_considered > budgetJigsawData.budget_max" 
+                    style="margin-top: 15px; padding: 12px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
+                <view style="font-size: 14px; color: #856404; font-weight: bold; margin-bottom: 4px;">预算提醒</view>
+                <view style="font-size: 13px; color: #856404;">
+                  当前预算已超出设定的最高限额，建议调整行程或增加预算。
+                </view>
+              </view>
+              
+              <!-- 交通预算预留提示 -->
+              <view v-if="budgetJigsawData.budget_breakdown && budgetJigsawData.budget_breakdown.交通 === 0" 
+                    style="margin-top: 15px; padding: 12px; background: #d1ecf1; border-radius: 8px; border-left: 4px solid #17a2b8;">
+                <view style="font-size: 14px; color: #0c5460; font-weight: bold; margin-bottom: 4px;">交通费用</view>
+                <view style="font-size: 13px; color: #0c5460;">
+                  交通费用将在生成行程后根据实际路线计算。
                 </view>
               </view>
             </view>
@@ -588,8 +980,12 @@
 
 <script>
 import { request, requestStream, requestStreamFallback } from "@/utils/request.js";
+import MarkdownRenderer from "@/components/MarkdownRenderer.vue";
 
 export default {
+  components: {
+    MarkdownRenderer
+  },
   data() {
     return {
       statusBarHeight: 0,
@@ -613,40 +1009,40 @@ export default {
       showJigsaw: false,
       itinerary: [],
       isGenerating: false,
-      jigsawType: "location", // 'location' | 'budget' | 'itinerary'
-      locationJigsawData: [
-        {
-          title: "成都三元油菜花田",
-          score: 4.8,
-          traffic: "地铁出行",
-          weather: "☀️ 32/39℃",
-          image: "/static/images/flower.jpg",
-        },
-        {
-          title: "云南罗平油菜花田",
-          score: 4.8,
-          traffic: "飞机出行",
-          weather: "☀️ 32/39℃",
-          image: "/static/images/flower.jpg",
-        },
-        {
-          title: "云南罗平油菜花田",
-          score: 4.8,
-          traffic: "高铁出行",
-          weather: "☀️ 32/39℃",
-          image: "/static/images/flower.jpg",
-        },
-      ],
+      jigsawType: "location", // 'location' | 'budget' | 'itinerary' | 'my_pois'
+      locationJigsawData: [], // 目的地推荐数据，通过API获取
+      myPoisData: [], // 我的POI数据，通过API获取
+      // 分页相关
+      currentPage: 1, // 当前页码
+      pageSize: 4, // 每页显示数量
       budgetJigsawData: {
-        住宿: 3400,
-        餐饮: 3400,
-        娱乐: 3400,
-        total: 10200,
+        budget_type: "empty",
+        budget_value: null,
+        budget_min: 0,
+        budget_max: 0,
+        total_considered: 0,
+        remaining_budget: 0,
+        budget_breakdown: {
+          住宿: 0,
+          餐饮: 0,
+          景点: 0,
+          娱乐: 0,
+          购物: 0,
+          交通: 0,
+        },
         chart: [
-          { name: "住宿", value: 3400, color: "#e6c36f" },
-          { name: "餐饮", value: 3400, color: "#8fd3c7" },
-          { name: "娱乐", value: 3400, color: "#f7a35c" },
+          { name: "预算待分配", value: 1000, color: "#e0e0e0" },
         ],
+        poi_costs: [],
+        poi_count: 0,
+        // 兼容原有结构
+        住宿: 0,
+        餐饮: 0,
+        娱乐: 0,
+        景点: 0,
+        购物: 0,
+        交通: 0,
+        total: 0,
       },
       isSimpleEditMode: false,
       showPlaceSelector: false,
@@ -680,12 +1076,24 @@ export default {
       streamingMessageIndex: -1, // 正在流式输出的消息索引
       streamingContent: "", // 流式输出的累积内容
       streamController: null, // 流式请求控制器
+      // 会话状态管理
+      sessionInfo: null, // 后端会话信息
+      slotsInfo: null, // 槽位信息
+      currentState: 'INIT', // 当前状态机状态
+      selectedPoi: null, // 当前选中的POI
+      shouldUpdatePOIAfterReply: false, // 控制是否在大模型回复后更新POI
+      locationJigsawLoading: false, // 目的地推荐数据加载状态
     };
   },
   onLoad() {
     const systemInfo = uni.getSystemInfoSync();
     this.statusBarHeight = systemInfo.statusBarHeight;
     this.contentPaddingTop = this.statusBarHeight + this.navContentHeight;
+    
+    // 如果已有会话ID，获取会话状态
+    if (this.sessionId) {
+      this.fetchSessionState();
+    }
   },
   watch: {
     "budgetJigsawData.住宿"(newVal) {
@@ -696,6 +1104,15 @@ export default {
     },
     "budgetJigsawData.娱乐"(newVal) {
       this.syncChartAndTotal("娱乐", newVal);
+    },
+    "budgetJigsawData.景点"(newVal) {
+      this.syncChartAndTotal("景点", newVal);
+    },
+    "budgetJigsawData.购物"(newVal) {
+      this.syncChartAndTotal("购物", newVal);
+    },
+    "budgetJigsawData.交通"(newVal) {
+      this.syncChartAndTotal("交通", newVal);
     },
   },
   methods: {
@@ -767,10 +1184,12 @@ export default {
       // 避免重复并发创建
       if (this._creatingSession) return this._creatingSession;
       uni.showToast({ title: "会话初始化中", icon: "none" });
-      this._creatingSession = request("/api/session/", { username: "demo" }, "POST")
+      this._creatingSession = request("/api/talker/session/", { username: "demo" }, "POST")
         .then((res) => {
           this.sessionId = res.session_id;
-          return this.sessionId;
+          console.log('会话创建成功，sessionId:', this.sessionId);
+          // 创建会话后立即获取会话状态
+          return this.fetchSessionState().then(() => this.sessionId);
         })
         .catch((err) => {
           console.error("会话创建失败", err);
@@ -781,6 +1200,416 @@ export default {
           this._creatingSession = null;
         });
       return this._creatingSession;
+    },
+
+    /** 获取会话状态 */
+    async fetchSessionState() {
+      if (!this.sessionId) {
+        console.log('fetchSessionState: sessionId为空，跳过获取');
+        return;
+      }
+      
+      try {
+        console.log('开始获取会话状态，sessionId:', this.sessionId);
+        const response = await request(`/api/talker/session/${this.sessionId}/`, {}, "GET");
+        
+        console.log('获取会话状态成功:', response);
+        
+        this.sessionInfo = response.session_info;
+        this.slotsInfo = response.slots_info;
+        this.currentState = response.current_state;
+        
+        // 根据会话状态更新拼图类型和数据
+        // shouldUpdatePOI 参数控制是否在此次更新中刷新POI数据
+        await this.updateJigsawFromSessionState(this.shouldUpdatePOIAfterReply);
+        
+        // 如果当前在我的POI页面，也要加载数据
+        if (this.jigsawType === 'my_pois') {
+          this.loadMyPoisData();
+        }
+        
+        // 重置POI更新标志
+        this.shouldUpdatePOIAfterReply = false;
+        
+        console.log('会话状态已更新:', {
+          sessionInfo: this.sessionInfo,
+          slotsInfo: this.slotsInfo,
+          currentState: this.currentState
+        });
+        
+      } catch (err) {
+        console.error("获取会话状态失败", err);
+      }
+    },
+
+    /** 根据会话状态更新拼图显示 */
+    async updateJigsawFromSessionState(shouldUpdatePOI = false) {
+      console.log('更新拼图显示:', {
+        currentState: this.currentState,
+        slotsInfo: this.slotsInfo,
+        sessionInfo: this.sessionInfo,
+        shouldUpdatePOI: shouldUpdatePOI
+      });
+      
+      // 根据当前状态决定拼图类型
+      if (this.currentState === 'SLOT_FILLING_DESTINATION' || 
+          this.currentState === 'SLOT_FILLING_DESTINATION_DEEP') {
+        // 目的地询问阶段，显示目的地推荐拼图
+        this.jigsawType = 'location';
+        // 只有在DESTINATION_DEEP状态且大模型回复完成后才更新POI
+        console.log('检查POI更新条件:', {
+          shouldUpdatePOI: shouldUpdatePOI,
+          currentState: this.currentState,
+          isDESTINATION_DEEP: this.currentState === 'SLOT_FILLING_DESTINATION_DEEP',
+          bothConditions: shouldUpdatePOI && this.currentState === 'SLOT_FILLING_DESTINATION_DEEP'
+        });
+        
+        if (shouldUpdatePOI && this.currentState === 'SLOT_FILLING_DESTINATION_DEEP') {
+          console.log('✅ DESTINATION_DEEP状态 + 大模型回复完成 → 更新POI推荐');
+        this.updateLocationJigsawData();
+        } else {
+          console.log('❌ 不符合POI更新条件，跳过搜索');
+        }
+      } else if (this.currentState === 'SLOT_FILLING_DESTINATION_CONFIRM') {
+        // 目的地确认阶段，显示当前对话的POI
+        this.jigsawType = 'location';
+        console.log('设置拼图类型为：location (目的地确认阶段) - 不更新POI数据');
+      } else if (this.currentState === 'SLOT_FILLING_BUDGET') {
+        // 预算询问阶段，显示预算拼图
+        this.jigsawType = 'budget';
+        await this.updateBudgetJigsawData();
+        console.log('设置拼图类型为：budget');
+      } else if (this.currentState === 'SLOT_FILLING_DATES') {
+        // 日期询问阶段，可以显示预算或行程拼图
+        this.jigsawType = 'budget';
+        await this.updateBudgetJigsawData();
+        console.log('设置拼图类型为：budget (日期询问阶段)');
+      } else if (this.currentState === 'CONFIRMATION' || this.currentState === 'COMPLETED') {
+        // 确认或完成阶段，显示行程拼图
+        this.jigsawType = 'itinerary';
+        this.updateItineraryData();
+        console.log('设置拼图类型为：itinerary');
+      } else {
+        // 默认或初始状态，显示目的地拼图
+        this.jigsawType = 'location';
+        console.log('设置拼图类型为：location (默认) - 不更新POI数据');
+      }
+    },
+
+    /** 处理图片加载错误 */
+    handleImageError(event) {
+      console.warn('图片加载失败:', event);
+      // 可以在这里设置默认图片
+      // event.target.src = '/static/images/flower.jpg';
+    },
+
+    /** 更新目的地拼图数据 */
+    async updateLocationJigsawData() {
+      try {
+        console.log('开始获取目的地推荐数据...');
+        
+        // 设置loading状态
+        this.locationJigsawLoading = true;
+        
+        // 构建请求URL
+        let url = '/api/talker/recommendations/destinations/';
+        if (this.sessionId) {
+          url = `/api/talker/recommendations/destinations/${this.sessionId}/`;
+        }
+        
+        // 构建查询参数
+        const params = new URLSearchParams({
+          count: '20',  // 获取足够多的POI用于分页
+          budget_range: 'medium'
+        });
+        
+        // 如果有用户画像，添加到参数中
+        if (this.slotsInfo && this.slotsInfo.profile && this.slotsInfo.profile.value) {
+          params.append('user_profile', this.slotsInfo.profile.value);
+        }
+        
+        const response = await request(`${url}?${params.toString()}`, {}, "GET");
+        
+        if (response.recommendations && response.recommendations.length > 0) {
+          // 更新拼图数据
+          this.locationJigsawData = response.recommendations;
+          // 重置分页到第一页
+          this.currentPage = 1;
+          console.log('目的地推荐数据更新成功:', response.recommendations);
+        } else {
+          // 没有推荐数据时清空数组
+          this.locationJigsawData = [];
+          this.currentPage = 1;
+          console.log('未获取到推荐数据，显示空状态');
+        }
+        
+      } catch (error) {
+        console.error('获取目的地推荐失败:', error);
+        // 清空推荐数据
+        this.locationJigsawData = [];
+        this.currentPage = 1;
+        console.log('推荐接口失败，显示空状态');
+      } finally {
+        // 无论成功还是失败，都要关闭loading状态
+        this.locationJigsawLoading = false;
+      }
+    },
+
+
+
+    /** 分页相关方法 */
+    // 获取当前页显示的POI数据
+    getCurrentPageData() {
+      const startIndex = (this.currentPage - 1) * this.pageSize;
+      const endIndex = startIndex + this.pageSize;
+      return this.locationJigsawData.slice(startIndex, endIndex);
+    },
+    
+    // 计算总页数
+    getTotalPages() {
+      return Math.ceil(this.locationJigsawData.length / this.pageSize);
+    },
+    
+    // 上一页
+    prevPage() {
+      if (this.currentPage > 1) {
+        this.currentPage--;
+        // 换页时重置选中状态
+        this.selectedPoi = null;
+      }
+    },
+    
+    // 下一页
+    nextPage() {
+      if (this.currentPage < this.getTotalPages()) {
+        this.currentPage++;
+        // 换页时重置选中状态
+        this.selectedPoi = null;
+      }
+    },
+    
+    // 跳转到指定页
+    goToPage(page) {
+      if (page >= 1 && page <= this.getTotalPages()) {
+        this.currentPage = page;
+      }
+    },
+
+    /** POI选择和加入相关方法 */
+    // 选择POI
+    selectPoi(poi) {
+      this.selectedPoi = poi;
+      console.log('选中POI:', poi);
+    },
+    
+    // 添加POI到会话
+    async addPOIToSession(poi) {
+      if (!this.sessionId) {
+        uni.showToast({ title: "请先创建会话", icon: "none" });
+        return;
+      }
+      
+      // 检查POI是否有索引
+      if (poi.poi_index === undefined) {
+        uni.showToast({ title: "POI索引无效，请重新获取推荐", icon: "error" });
+        return;
+      }
+      
+      try {
+        uni.showToast({ title: "正在添加POI...", icon: "loading" });
+        
+        const response = await request("/api/talker/pois/add/", {
+          session_id: this.sessionId,
+          poi_index: poi.poi_index
+        }, "POST");
+        
+        // 添加详细的调试信息
+        console.log('=== POI添加响应调试信息 ===');
+        console.log('完整响应:', JSON.stringify(response, null, 2));
+        console.log('response.success:', response.success, typeof response.success);
+        console.log('response.exists:', response.exists, typeof response.exists);
+        console.log('response.message:', response.message);
+        console.log('判断逻辑:');
+        console.log('  第一个if (response.success):', !!response.success);
+        console.log('  第二个else if (response.exists):', !!response.exists);
+        
+        if (response.success) {
+          console.log('-> 执行成功分支');
+          uni.showToast({ title: "POI添加成功", icon: "success" });
+          console.log('POI添加成功:', response.message);
+          
+          // 添加成功后取消选中状态
+          this.selectedPoi = null;
+          
+          // 如果当前在我的POI页面，刷新数据
+          if (this.jigsawType === 'my_pois') {
+            this.loadMyPoisData();
+          }
+        } else if (response.exists) {
+          // POI已存在的情况
+          console.log('-> 执行POI已存在分支');
+          uni.showToast({ 
+            title: "该POI已存在于会话中", 
+            icon: "success",
+            duration: 2000
+          });
+          console.log('POI已存在:', response.message);
+          
+          // 取消选中状态
+          this.selectedPoi = null;
+          
+          // 如果当前在我的POI页面，刷新数据以显示最新状态
+          if (this.jigsawType === 'my_pois') {
+            this.loadMyPoisData();
+          }
+        } else {
+          console.log('-> 执行失败分支');
+          uni.showToast({ title: response.message || "POI添加失败", icon: "error" });
+          console.error('POI添加失败:', response.message);
+        }
+        console.log('=== POI添加响应调试信息结束 ===');
+      } catch (error) {
+        console.error('添加POI错误:', error);
+        uni.showToast({ title: "添加POI失败", icon: "error" });
+      }
+    },
+
+    /** 拼图类型切换 */
+    async switchJigsawType(type) {
+      this.jigsawType = type;
+      
+      // 根据类型加载相应数据
+      if (type === 'location') {
+        // 不在标签页切换时触发POI搜索，只显示现有数据
+        console.log('切换到推荐标签页 - 显示现有数据，不触发搜索');
+      } else if (type === 'my_pois') {
+        this.loadMyPoisData();
+              } else if (type === 'budget') {
+          await this.updateBudgetJigsawData();
+        } else if (type === 'itinerary') {
+        this.updateItineraryData();
+      }
+    },
+
+    /** 加载我的POI数据 */
+    async loadMyPoisData() {
+      if (!this.sessionId) {
+        console.log('loadMyPoisData: sessionId为空，跳过加载');
+        this.myPoisData = [];
+        return;
+      }
+      
+      try {
+        const response = await request(`/api/talker/pois/list/?session_id=${this.sessionId}`, {}, "GET");
+        
+        if (response.success && response.pois) {
+          this.myPoisData = response.pois;
+          console.log('我的POI数据加载成功:', response.pois);
+        } else {
+          this.myPoisData = [];
+          console.log('未获取到我的POI数据');
+        }
+        
+      } catch (error) {
+        console.error('加载我的POI数据失败:', error);
+        this.myPoisData = [];
+      }
+    },
+
+    /** 从会话中删除POI */
+    async removePOIFromSession(poi) {
+      if (!this.sessionId) {
+        uni.showToast({ title: "请先创建会话", icon: "none" });
+        return;
+      }
+      
+      try {
+        uni.showToast({ title: "正在删除POI...", icon: "loading" });
+        
+        const response = await request("/api/talker/pois/remove/", {
+          session_id: this.sessionId,
+          poi_id: poi.id
+        }, "POST");
+        
+        if (response.success) {
+          uni.showToast({ title: "POI删除成功", icon: "success" });
+          console.log('POI删除成功:', response.message);
+          
+          // 删除成功后重新加载数据
+          this.loadMyPoisData();
+        } else {
+          uni.showToast({ title: "POI删除失败", icon: "error" });
+          console.error('POI删除失败:', response.message);
+        }
+      } catch (error) {
+        console.error('删除POI错误:', error);
+        uni.showToast({ title: "删除POI失败", icon: "error" });
+      }
+    },
+
+    /** 更新预算拼图数据 */
+    async updateBudgetJigsawData() {
+      // 根据目的地和其他信息更新预算建议
+      if (!this.sessionId) {
+        console.log('updateBudgetJigsawData: sessionId为空，跳过更新');
+        return;
+      }
+      
+      try {
+        console.log('开始更新预算拼图数据，sessionId:', this.sessionId);
+        
+        const response = await request(`/api/talker/budget/analysis/?session_id=${this.sessionId}`, {}, "GET");
+        
+        if (response.error) {
+          console.error('获取预算分析失败:', response.message);
+          return;
+        }
+        
+        console.log('预算分析结果:', response);
+        
+        // 更新预算数据结构
+        this.budgetJigsawData = {
+          budget_type: response.budget_type,
+          budget_value: response.budget_value,
+          budget_min: response.budget_min,
+          budget_max: response.budget_max,
+          total_considered: response.total_considered,
+          remaining_budget: response.remaining_budget,
+          budget_breakdown: response.budget_breakdown,
+          chart: response.chart_data,
+          poi_costs: response.poi_costs,
+          poi_count: response.poi_count
+        };
+        
+        // 为了兼容现有的输入框，同时设置各类别的值
+        if (response.budget_breakdown) {
+          this.budgetJigsawData.住宿 = response.budget_breakdown.住宿 || 0;
+          this.budgetJigsawData.餐饮 = response.budget_breakdown.餐饮 || 0;
+          this.budgetJigsawData.娱乐 = response.budget_breakdown.娱乐 || 0;
+          this.budgetJigsawData.景点 = response.budget_breakdown.景点 || 0;
+          this.budgetJigsawData.购物 = response.budget_breakdown.购物 || 0;
+          this.budgetJigsawData.交通 = response.budget_breakdown.交通 || 0;
+        }
+        
+        // 计算总预算
+        this.budgetJigsawData.total = response.total_considered;
+        
+        console.log('预算拼图数据已更新:', this.budgetJigsawData);
+        
+      } catch (error) {
+        console.error('更新预算拼图数据失败:', error);
+      }
+    },
+
+    /** 更新行程拼图数据 */
+    updateItineraryData() {
+      // 根据收集的信息生成行程
+      // TODO: 调用 /api/talker/itinerary/generate/ 接口
+      if (this.currentState === 'COMPLETED' || this.currentState === 'CONFIRMATION') {
+        console.log('更新行程拼图数据 - 生成完整行程');
+        // 暂时使用示例数据
+        this.itinerary = this.getSampleItinerary();
+      }
     },
 
     /** 真正发送消息到后端并处理回复 */
@@ -795,7 +1624,7 @@ export default {
     /** 同步发送消息到后端 */
     _sendToBackendSync(text) {
       this.awaitingReply = true;
-      request("/api/message/", { session_id: this.sessionId, message: text }, "POST")
+      request("/api/talker/state-machine/", { session_id: this.sessionId, message: text }, "POST")
         .then((res) => {
           const reply =
             res.response ||
@@ -809,6 +1638,12 @@ export default {
           });
           this.saveChatToHistory();
           this.scrollToBottom();
+          
+          // 消息完成后延时同步会话状态，并标记需要更新POI
+          this.shouldUpdatePOIAfterReply = true;
+          setTimeout(() => {
+          this.fetchSessionState();
+          }, 500);
         })
         .catch((err) => {
           console.error(err);
@@ -869,17 +1704,8 @@ export default {
 
     /** 处理流式数据块 */
     _handleStreamChunk(chunk) {
-      console.log('收到流式数据块:', chunk);
-      
       if (chunk.type === 'content' && chunk.chunk) {
         this.streamingContent += chunk.chunk;
-        
-        console.log('更新流式内容:', {
-          streamingMessageIndex: this.streamingMessageIndex,
-          messagesLength: this.messages.length,
-          streamingContent: this.streamingContent,
-          chunkContent: chunk.chunk
-        });
         
         // 更新正在流式输出的消息内容
         if (this.streamingMessageIndex >= 0 && this.streamingMessageIndex < this.messages.length) {
@@ -890,16 +1716,12 @@ export default {
               content: this.streamingContent
             });
             
-            console.log('消息已更新:', this.messages[this.streamingMessageIndex]);
-            
             // 自动滚动到底部
             this.$nextTick(() => {
               this.scrollToBottom();
             });
           }, 10); // 10ms延迟
         }
-      } else if (chunk.type === 'event') {
-        console.log('收到事件:', chunk.event, chunk.data);
       }
     },
 
@@ -915,8 +1737,14 @@ export default {
       }
       
       this._resetStreamState();
-            this.saveChatToHistory();
-            this.scrollToBottom();
+      this.saveChatToHistory();
+      this.scrollToBottom();
+      
+      // 消息完成后延时同步会话状态，确保状态机处理完成，并标记需要更新POI
+      this.shouldUpdatePOIAfterReply = true;
+      setTimeout(() => {
+      this.fetchSessionState();
+      }, 500);
     },
 
     /** 处理流式错误 */
@@ -1227,24 +2055,44 @@ export default {
     getBudgetChartDasharray(idx) {
       // 总周长 = 2 * Math.PI * r (r=50)
       const C = 2 * Math.PI * 50;
+      
+      if (!this.budgetJigsawData.chart || this.budgetJigsawData.chart.length === 0) {
+        return `${C} ${C}`;
+      }
+      
       const total = this.budgetJigsawData.chart.reduce(
-        (sum, item) => sum + item.value,
+        (sum, item) => sum + (item.value || 0),
         0
       );
-      const value = this.budgetJigsawData.chart[idx].value;
+      
+      if (total === 0) {
+        return `${C} ${C}`;
+      }
+      
+      const value = this.budgetJigsawData.chart[idx].value || 0;
       const length = (value / total) * C;
       return `${length} ${C - length}`;
     },
     getBudgetChartOffset(idx) {
       // 总周长 = 2 * Math.PI * r (r=50)
       const C = 2 * Math.PI * 50;
+      
+      if (!this.budgetJigsawData.chart || this.budgetJigsawData.chart.length === 0) {
+        return 0;
+      }
+      
       const total = this.budgetJigsawData.chart.reduce(
-        (sum, item) => sum + item.value,
+        (sum, item) => sum + (item.value || 0),
         0
       );
+      
+      if (total === 0) {
+        return 0;
+      }
+      
       let offset = 0;
       for (let i = 0; i < idx; i++) {
-        offset += (this.budgetJigsawData.chart[i].value / total) * C;
+        offset += ((this.budgetJigsawData.chart[i].value || 0) / total) * C;
       }
       return -offset;
     },
@@ -1255,12 +2103,54 @@ export default {
       );
       if (chartItem) {
         chartItem.value = newVal;
+      } else {
+        // 如果chart中没有找到对应项，且值大于0，则添加
+        if (newVal > 0) {
+          const colors = {
+            "住宿": "#e6c36f",
+            "餐饮": "#8fd3c7", 
+            "景点": "#f7a35c",
+            "娱乐": "#ff9999",
+            "购物": "#c7a9dd",
+            "交通": "#95d4f4"
+          };
+          this.budgetJigsawData.chart.push({
+            name: key,
+            value: newVal,
+            color: colors[key] || "#cccccc"
+          });
+        }
       }
+      
+      // 更新budget_breakdown
+      if (this.budgetJigsawData.budget_breakdown) {
+        this.budgetJigsawData.budget_breakdown[key] = newVal;
+      }
+      
       // 重新计算总数
-      this.budgetJigsawData.total = this.budgetJigsawData.chart.reduce(
-        (total, item) => total + item.value,
-        0
-      );
+      this.budgetJigsawData.total = this.budgetJigsawData.chart
+        .filter(item => item.name !== '剩余预算' && item.name !== '预算待分配')
+        .reduce((total, item) => total + (item.value || 0), 0);
+      
+      this.budgetJigsawData.total_considered = this.budgetJigsawData.total;
+      
+      // 如果有具体预算限制，重新计算剩余预算
+      if (this.budgetJigsawData.budget_type === 'specific' && this.budgetJigsawData.budget_max > 0) {
+        const remaining = Math.max(0, this.budgetJigsawData.budget_max - this.budgetJigsawData.total_considered);
+        this.budgetJigsawData.remaining_budget = remaining;
+        
+        // 更新或添加剩余预算到chart
+        const remainingItem = this.budgetJigsawData.chart.find(item => item.name === '剩余预算');
+        if (remainingItem) {
+          remainingItem.value = remaining;
+        } else if (remaining > 0) {
+          this.budgetJigsawData.chart.push({
+            name: '剩余预算',
+            value: remaining,
+            color: '#e0e0e0'
+          });
+        }
+      }
     },
     onViewDetail() {
       const itineraryStr = encodeURIComponent(JSON.stringify(this.itinerary));
@@ -1380,6 +2270,15 @@ export default {
       // 重置流式状态
       this._resetStreamState();
       this._creatingSession = null;
+      // 清理会话状态
+      this.sessionInfo = null;
+      this.slotsInfo = null;
+      this.currentState = 'INIT';
+      this.jigsawType = 'location';
+      // 重置POI选择状态
+      this.selectedPoi = null;
+      // 清空POI数据
+      this.myPoisData = [];
     },
   },
 };
@@ -1862,6 +2761,99 @@ export default {
       display: block;
       font-size: 11px;
       margin-top: 4px;
+    }
+
+    /* Markdown内容适配 */
+    .markdown-content {
+      font-size: 14px;
+      line-height: 1.6;
+      
+      /* 重写Markdown组件的样式以适配消息气泡 */
+      :deep(h1), :deep(h2), :deep(h3), :deep(h4), :deep(h5), :deep(h6) {
+        margin: 8px 0 6px 0;
+        font-size: 1.1em;
+      }
+      
+      :deep(h1) {
+        font-size: 1.2em;
+        border-bottom: 1px solid #e1e8ed;
+      }
+      
+      :deep(h2) {
+        font-size: 1.15em;
+        border-bottom: 1px solid #f0f0f0;
+      }
+      
+      :deep(p) {
+        margin: 6px 0;
+      }
+      
+      :deep(ul), :deep(ol) {
+        margin: 6px 0;
+        padding-left: 16px;
+      }
+      
+      :deep(li) {
+        margin: 2px 0;
+      }
+      
+      :deep(strong) {
+        color: inherit;
+        font-weight: 600;
+      }
+      
+      :deep(code) {
+        background-color: rgba(0, 0, 0, 0.05);
+        padding: 1px 3px;
+        border-radius: 2px;
+        font-size: 0.9em;
+      }
+      
+      :deep(pre) {
+        background-color: rgba(0, 0, 0, 0.03);
+        border-radius: 4px;
+        padding: 8px;
+        margin: 8px 0;
+        overflow-x: auto;
+        font-size: 0.85em;
+      }
+      
+      :deep(blockquote) {
+        border-left: 3px solid #ddd;
+        margin: 8px 0;
+        padding: 4px 8px;
+        background-color: rgba(0, 0, 0, 0.02);
+        font-style: italic;
+      }
+      
+      /* 旅游攻略特殊样式 */
+      :deep(.day-title) {
+        background: linear-gradient(135deg, #4f7063 0%, #5b7b84 100%);
+        color: white;
+        padding: 6px 10px;
+        border-radius: 4px;
+        margin: 10px 0 8px 0;
+        font-size: 0.95em;
+        font-weight: bold;
+      }
+      
+      :deep(.poi-item) {
+        background-color: rgba(79, 112, 99, 0.05);
+        border-left: 3px solid #4f7063;
+        padding: 6px 10px;
+        margin: 6px 0;
+        border-radius: 0 3px 3px 0;
+        font-size: 0.9em;
+      }
+      
+      :deep(.time-marker) {
+        color: #e74c3c;
+        font-weight: 600;
+        background-color: rgba(231, 76, 60, 0.1);
+        padding: 1px 4px;
+        border-radius: 2px;
+        font-size: 0.9em;
+      }
     }
   }
 }
@@ -2363,5 +3355,149 @@ export default {
     opacity: 1;
     transform: scale(1);
   }
+}
+
+/* 会话状态信息样式 */
+.session-status {
+  background: #f0f8ff;
+  border-radius: 12px;
+  padding: 12px;
+  margin-top: 12px;
+  border-left: 4px solid #4a90e2;
+}
+
+.status-title {
+  font-size: 14px;
+  font-weight: bold;
+  color: #2c4a52;
+  margin-bottom: 8px;
+}
+
+.status-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.status-item {
+  font-size: 13px;
+  color: #4a90e2;
+  background: rgba(74, 144, 226, 0.1);
+  padding: 4px 8px;
+  border-radius: 8px;
+  display: inline-block;
+  width: fit-content;
+}
+
+/* 分页控件样式 */
+.pagination-btn {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pagination-btn:not(.disabled):active {
+  background: #e0e0e0 !important;
+  transform: scale(0.95);
+}
+
+.pagination-btn.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* POI选择和加入功能样式 */
+.poi-card {
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.poi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(60, 89, 107, 0.12);
+}
+
+.poi-card.selected {
+  border: 2px solid #4f7063;
+  box-shadow: 0 4px 12px rgba(79, 112, 99, 0.2);
+}
+
+.poi-add-btn {
+  background: #4f7063;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  margin-left: 8px;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 2px 4px rgba(79, 112, 99, 0.3);
+  transition: all 0.2s ease;
+}
+
+.poi-add-btn:hover {
+  background: #3a5449;
+  transform: translateY(-1px);
+}
+
+.poi-add-btn:active {
+  transform: translateY(0);
+}
+
+/* 拼图标签页导航样式 */
+.jigsaw-tabs {
+  display: flex;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 4px;
+  margin-top: 16px;
+  backdrop-filter: blur(10px);
+}
+
+.jigsaw-tab {
+  flex: 1;
+  text-align: center;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.jigsaw-tab.active {
+  background: rgba(255, 255, 255, 0.2);
+  color: #f8f4e9;
+  font-weight: 500;
+}
+
+.jigsaw-tab:hover {
+  color: #f8f4e9;
+}
+
+/* 删除按钮样式 */
+.poi-remove-btn {
+  background: #dc3545;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  margin-left: 8px;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 2px 4px rgba(220, 53, 69, 0.3);
+  transition: all 0.2s ease;
+}
+
+.poi-remove-btn:hover {
+  background: #c82333;
+  transform: translateY(-1px);
+}
+
+.poi-remove-btn:active {
+  transform: translateY(0);
 }
 </style>
