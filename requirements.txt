@@ -18,8 +18,8 @@ transitions>=0.9.0
 pandas>=2.1.1
 numpy>=1.26.4
 
-# 异步编程
-asyncio>=3.4.3
+# 机器学习/聚类
+scikit-learn>=1.4.2
 
 # 浏览器自动化 (hunter模块)
 playwright>=1.40.0
