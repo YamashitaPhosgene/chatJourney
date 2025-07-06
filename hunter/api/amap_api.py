@@ -3,6 +3,7 @@
 import requests
 import threading
 import time
+from django.utils import timezone
 
 class AmapAPIError(Exception):
     """Custom exception for Amap API errors."""
@@ -369,6 +370,106 @@ class AmapPlaceAPI:
             show_fields = fields
         data = self.detail_search(ids_param, show_fields=show_fields, **kwargs)
         return data.get("pois", [])
+
+    # ====================== 新增：reverse_search_poi ======================
+    def reverse_search_poi(self, keywords: str, save_raw: bool = True):
+        """
+        根据用户输入的 ``keywords`` 调用 **高德 Place Text Search**，并将结果与本地数据库进行映射。
+
+        处理流程：
+        1. **缓存查询**：首先在 ``POIKeywordCache`` 表中查找（忽略大小写）。
+           • 命中：更新 ``hit_count += 1``，立刻返回关联的 ``POIItem.id``，**不会再次请求高德**。
+        2. **在线检索**：缓存未命中时，调用 :py:meth:`AmapPlaceAPI.text_search`，仅取 **首条** POI 数据。
+           • 无结果   → 返回 ``None``；
+           • 有结果   → 执行以下步骤：
+             a. 使用 ``poi_id`` 在 ``POIItem`` 中 ``get_or_create``；
+             b. 若记录已存在，仅更新核心字段（``name`` / ``address`` / ``location`` / ``type`` / ``tel`` / ``distance``），
+                *不* 覆盖 ``raw_data``；
+             c. 创建或更新 ``POIKeywordCache``（``keyword → poi``），``hit_count`` 初始化为 1。
+        3. **异常处理**：任何阶段抛出的异常都会被捕获并写入日志，函数最终返回 ``None``。
+
+        参数
+        ----------
+        keywords : str
+            待检索的关键词；传入空字符串将直接返回 ``None``。
+        save_raw : bool, default ``True``
+            是否将高德返回的完整 POI 字段保存到 ``POIItem.raw_data``。若设置为 ``False`` 可减少数据库体积。
+
+        返回
+        -------
+        int | None
+            新创建或命中缓存的 ``POIItem.id``；当搜索无结果或发生异常时返回 ``None``。
+
+        注意
+        ----
+        • 本方法依赖 **Django ORM**，因此只能在 Django 进程（Web Server / 管理命令 / 脚本）中调用。
+        • 请求频率受类级别 ``_rate_limit`` 控制，默认 QPS ≈ 1.6。
+        """
+        if not keywords:
+            return None
+
+        # 延迟 import 避免在非 Django 环境使用时报错（如单元测试或脚本环境）
+        try:
+            from talker.models import POIItem, POIKeywordCache
+        except Exception:
+            # 非 Django 环境直接跳过 DB 保存
+            data = self.text_search(keywords=keywords, page_size=1)
+            pois = data.get("pois", []) if data else []
+            return pois[0].get("id") if pois else None
+
+        # === 查询缓存 ===
+        cache_obj = POIKeywordCache.objects.filter(keyword__iexact=keywords).select_related("poi").first()
+        if cache_obj and cache_obj.poi:
+            cache_obj.hit_count += 1
+            cache_obj.save(update_fields=["hit_count", "updated_at"])
+            return cache_obj.poi.id
+
+        try:
+            data = self.text_search(
+                keywords=keywords,
+                page_size=1,
+                show_fields="children,business,indoor,navi,photos"
+            )
+            pois = data.get("pois", []) if data else []
+            if not pois:
+                return None
+            poi_data = pois[0]
+            poi_id = poi_data.get("id", "")
+            if not poi_id:
+                return None
+
+            defaults = {
+                "name": poi_data.get("name", keywords),
+                "address": poi_data.get("address", ""),
+                "location": poi_data.get("location", ""),
+                "type": poi_data.get("type", ""),
+                "tel": poi_data.get("tel", ""),
+                "distance": poi_data.get("distance", ""),
+                "raw_data": poi_data if save_raw else {},
+            }
+            poi_item, created = POIItem.objects.get_or_create(
+                poi_id=poi_id,
+                defaults=defaults,
+            )
+            if not created:
+                # 更新核心字段，但保留已有 raw_data
+                for k, v in defaults.items():
+                    if k == "raw_data":
+                        continue
+                    setattr(poi_item, k, v)
+                poi_item.save(update_fields=["name", "address", "location", "type", "tel", "distance", "updated_at"])
+
+            # 写入缓存
+            POIKeywordCache.objects.update_or_create(
+                keyword=keywords,
+                defaults={"poi": poi_item, "updated_at": timezone.now()},
+            )
+            return poi_item.id
+        except Exception as e:
+            # 捕获 ORM 或 API 错误，日志可由外层处理
+            import logging
+            logging.warning(f"reverse_search_poi failed for '{keywords}': {e}")
+            return None
 
 # Usage Example:
 # api = AmapPlaceAPI(key="YOUR_KEY")

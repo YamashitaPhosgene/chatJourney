@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from django.db.models import Prefetch
 from datetime import timedelta, datetime, time
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
@@ -37,13 +37,22 @@ class TripViewSet(viewsets.ModelViewSet):
     serializer_class = TripSerializer
     permission_classes = [IsAuthenticated]
 
+    # 默认需要登录，但允许任何人 GET（retrieve/list）以便前端无需鉴权即可读取示例行程
+    def get_permissions(self):
+        if self.action in ["retrieve", "list"]:
+            return [AllowAny()]
+        return super().get_permissions()
+
     def get_serializer_class(self):
         if self.action == 'retrieve':
             return TripDetailSerializer
         return TripSerializer
 
     def get_queryset(self):
-        return self.queryset.filter(user=self.request.user)
+        # 未登录时允许访问全部公开 Trip（示例数据）
+        if self.request.user and self.request.user.is_authenticated:
+            return self.queryset.filter(user=self.request.user)
+        return self.queryset.filter(is_public=True)
 
     @action(detail=True, methods=['get'], url_path='timeline(?:/(?P<day_index>[0-9]+))?')
     def timeline(self, request, pk=None, day_index=None):

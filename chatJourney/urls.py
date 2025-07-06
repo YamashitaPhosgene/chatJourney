@@ -38,6 +38,7 @@ router.register(r'talk_sessions', TalkSessionViewSet, basename='talksession')
 urlpatterns = [
     path("admin/", admin.site.urls),
     path('api/', include(router.urls)),
+    path('api/planner/', include('planner.urls')),
     path('api/chat/', ChatView.as_view(), name='chat'),
     path('api/chat/history/', ChatHistoryView.as_view(), name='chat_history'),
     path('api/message/', StateMachineView.as_view(), name='message'),

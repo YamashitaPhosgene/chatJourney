@@ -62,3 +62,21 @@ class POISession(models.Model):
         return f"会话{self.session.id} - {self.poi.name} ({self.source})"
 
 
+# ========================== 新增：关键词→POI 缓存表 ==========================
+
+class POIKeywordCache(models.Model):
+    """缓存关键词到 POIItem 的映射，避免重复调用高德搜索"""
+    id = models.AutoField(primary_key=True)
+    keyword = models.CharField(max_length=200, unique=True, help_text="用户输入的关键词")
+    poi = models.ForeignKey(POIItem, on_delete=models.CASCADE, related_name='keyword_caches')
+    hit_count = models.PositiveIntegerField(default=1, help_text="命中次数，便于统计热度")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"{self.keyword} → {self.poi.name}"
+
+

@@ -140,6 +140,7 @@ class TripSerializer(serializers.ModelSerializer):
 class TripDetailSerializer(serializers.ModelSerializer):
     user = serializers.StringRelatedField(read_only=True)
     events = serializers.SerializerMethodField()
+    days = serializers.SerializerMethodField()
 
     class Meta:
         model = Trip
@@ -153,17 +154,10 @@ class TripDetailSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
             'events',
+            'days',
         ]
 
-    def get_events(self, obj):
-        """
-        返回按日期和时间排序的所有事件
-        使用select_subclasses()确保获取到正确的子类实例
-        """
-        events = Event.objects.filter(trip=obj).select_subclasses().order_by('date', 'start_time')
-        serialized_events = []
-        
-        for event in events:
+    def _serialize_event(self, event):
             if isinstance(event, Activity):
                 serializer = ActivitySerializer(event)
             elif isinstance(event, Transport):
@@ -172,7 +166,38 @@ class TripDetailSerializer(serializers.ModelSerializer):
                 serializer = AccommodationSerializer(event)
             else:
                 serializer = EventSerializer(event)
-            
-            serialized_events.append(serializer.data)
-        
-        return serialized_events
+            return serializer.data
+
+    def get_events(self, obj):
+        """按时间排序的所有事件（平铺）"""
+        events = Event.objects.filter(trip=obj).select_subclasses().order_by('date', 'start_time')
+        return [self._serialize_event(ev) for ev in events]
+
+    def get_days(self, obj):
+        """返回 days 数组，每天包含 events"""
+        # 优先使用 Day 模型，如不存在则按照日期分组
+        days_qs = obj.days.all().order_by('day_index')
+        if days_qs.exists():
+            result = []
+            for day in days_qs:
+                day_events = Event.objects.filter(trip=obj, date=day.date).select_subclasses().order_by('start_time')
+                result.append({
+                    'day_index': day.day_index,
+                    'date': day.date,
+                    'events': [self._serialize_event(ev) for ev in day_events]
+                })
+            return result
+
+        # fallback: group by date
+        events = Event.objects.filter(trip=obj).select_subclasses().order_by('date', 'start_time')
+        grouped = {}
+        for ev in events:
+            grouped.setdefault(str(ev.date), []).append(self._serialize_event(ev))
+        result = []
+        for idx, (date_str, ev_list) in enumerate(grouped.items(), start=1):
+            result.append({
+                'day_index': idx,
+                'date': date_str,
+                'events': ev_list
+            })
+        return result

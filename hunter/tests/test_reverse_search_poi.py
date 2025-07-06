@@ -1,9 +1,9 @@
 from django.test import TestCase
 from unittest.mock import patch
+
 from hunter.api.amap_api import AmapPlaceAPI
 from talker.models import POIItem, POIKeywordCache
 
-# Create your tests here.
 
 class ReverseSearchPOITestCase(TestCase):
     """验证 reverse_search_poi 首次调用写库、二次调用命中缓存"""
@@ -45,4 +45,4 @@ class ReverseSearchPOITestCase(TestCase):
         self.assertEqual(POIItem.objects.count(), 1)  # 不新增
         cache.refresh_from_db()
         self.assertEqual(cache.hit_count, 2)
-        mock_text_search.assert_not_called()
+        mock_text_search.assert_not_called() 
