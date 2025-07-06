@@ -1776,17 +1776,25 @@ export default {
         return;
       }
       
+      // 若后端会话中已存 timeline_data，直接转换展示
+      if (this.sessionInfo && this.sessionInfo.state && this.sessionInfo.state.timeline_data) {
+        try {
+          this.itinerary = this.convertTimelineToItinerary(this.sessionInfo.state.timeline_data);
+          if (this.itinerary.length > 0) {
+            console.log('已从会话状态加载行程数据');
+            return;
+          }
+        } catch (e) {
+          console.warn('解析timeline_data失败', e);
+        }
+      }
+      
       // 如果没有行程数据，显示空状态和生成按钮
       console.log('暂无行程数据，等待用户手动生成');
     },
 
     /** 手动生成行程链 */
     async generateItinerary() {
-      // 若启用流式模式，改用SSE版本
-      if (this.isStreamMode) {
-        await this.generateItineraryStream();
-        return;
-      }
       // 检查是否满足生成条件
       if (this.currentState !== 'COMPLETED' && this.currentState !== 'CONFIRMATION') {
         uni.showToast({
@@ -1821,7 +1829,7 @@ export default {
         this.timelineAbortController = { cancelled: false };
         
         // 调用Timeline服务API
-        const response = await request(`/api/talker/timeline/${this.sessionId}/`, {}, "GET");
+        const response = await request(`/api/talker/timeline/${this.sessionId}/`, {}, "GET", {}, { timeout: 300000 });
         
         // 检查是否已被取消
         if (this.timelineAbortController && this.timelineAbortController.cancelled) {
@@ -1888,90 +1896,6 @@ export default {
       }
     },
 
-    /** 流式生成行程链（SSE） */
-    async generateItineraryStream() {
-      // 条件检查与原同步版本相同
-      if (this.currentState !== 'COMPLETED' && this.currentState !== 'CONFIRMATION') {
-        uni.showToast({ title: '请先完成信息收集', icon: 'none' });
-        return;
-      }
-      if (!this.sessionId) {
-        uni.showToast({ title: '请先创建会话', icon: 'none' });
-        return;
-      }
-
-      this.isGenerating = true;
-      // 添加初始状态消息
-      this.messages.push({
-        type: 'status',
-        content: '行程规划中… (初始化)',
-      });
-      this.scrollToBottom();
-
-      const streamOptions = {
-        onChunk: (chunk) => {
-          if (chunk.type === 'stage') {
-            // 更新状态消息内容
-            const stageMap = {
-              profile_consolidation: '整合用户画像…',
-              geographic_clustering: '地理聚类…',
-              itinerary_drafting: '生成草案…',
-              itinerary_review: '结构化评审…',
-              itinerary_revision: '修订草案…',
-              chain_generation: '生成链式结构…',
-            };
-            const text = stageMap[chunk.stage] || chunk.stage;
-            // 找到最后一条status并替换
-            const idx = this.messages.length - 1;
-            if (idx >= 0 && this.messages[idx].type === 'status') {
-              this.$set(this.messages, idx, { ...this.messages[idx], content: `行程规划中… (${text})` });
-            }
-          }
-        },
-        onDone: (fullContent) => {
-          // fullContent 可能是 result 对象字符串
-          try {
-            const dataObj = typeof fullContent === 'string' ? JSON.parse(fullContent) : fullContent;
-            if (dataObj && dataObj.result && dataObj.result.timeline_data) {
-              this.itinerary = this.convertTimelineToItinerary(dataObj.result.timeline_data);
-            }
-          } catch (e) {
-            console.warn('解析SSE完成数据失败', e);
-          }
-          this._finishStreamTimeline(true);
-        },
-        onError: (err) => {
-          console.error('Timeline SSE 错误:', err);
-          this._finishStreamTimeline(false, err);
-        },
-      };
-
-      requestStream('/api/talker/timeline/stream/', { session_id: this.sessionId }, streamOptions)
-        .then((controller) => {
-          this.timelineAbortController = controller;
-        })
-        .catch((err) => {
-          console.error('Timeline SSE 请求失败:', err);
-          this._finishStreamTimeline(false, err);
-        });
-    },
-
-    /** 结束流式行程链生成后的处理 */
-    _finishStreamTimeline(success, error = null) {
-      // 移除最后的status
-      this.messages = this.messages.filter((m) => !(m.type === 'status'));
-      if (success) {
-        this.messages.push({ type: 'status', content: '行程链生成完成' });
-        uni.showToast({ title: '行程生成成功', icon: 'success' });
-      } else {
-        this.messages.push({ type: 'ai', content: `⚠️ 行程生成失败：${error ? error.toString() : '未知错误'}`, time: new Date().toLocaleTimeString() });
-        uni.showToast({ title: '行程生成失败', icon: 'error' });
-      }
-      this.isGenerating = false;
-      this.timelineAbortController = null;
-      this.scrollToBottom();
-    },
-
     /** 将Timeline数据转换为前端itinerary格式 */
     convertTimelineToItinerary(timelineData) {
       console.log('开始转换Timeline数据:', timelineData);
@@ -1997,6 +1921,7 @@ export default {
               image: this.getActivityImage(activity),
               // 兼容后端返回的 place 字段
               location: activity.place || activity.location || activity.activity || '未知地点',
+              subtext: activity.description || activity.desc || activity.type || '',
               type: this.getActivityType(activity),
               duration: this.getActivityDuration(activity)
             };

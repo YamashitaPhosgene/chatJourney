@@ -1,6 +1,7 @@
 import { baseURL } from "@/config/index.js";
 
-export function request(url, data = {}, method = "GET", headers = {}) {
+export function request(url, data = {}, method = "GET", headers = {}, options = {}) {
+  const { timeout = 60000 } = options; // 默认 60s，可自定义
   return new Promise((resolve, reject) => {
     // 为所有请求添加客户端类型参数
     const finalUrl = url.includes('?') 
@@ -12,6 +13,7 @@ export function request(url, data = {}, method = "GET", headers = {}) {
       method,
       data,
       header: { "Content-Type": "application/json", ...headers },
+      timeout,
       success: (res) => resolve(res.data),
       fail: (err) => reject(err),
     });
@@ -108,13 +110,6 @@ function requestStreamReal(url, data = {}, options = {}) {
                       chunk: data.chunk,
                       fullContent: data.full_content,
                       data: data
-                    });
-                  } else if (data.type === 'stage') {
-                    if (onChunk) onChunk({
-                      type: 'stage',
-                      stage: data.stage,
-                      data: data,
-                      fullContent: ''
                     });
                   } else if (data.type === 'done') {
                     if (onDone) onDone(data.full_content);
@@ -246,16 +241,6 @@ function parseSSEResponse(responseText, callbacks) {
             fullContent: fullContent,
             data: data
           });
-        } else if (data.type === 'stage') {
-          if (onChunk) onChunk({
-            type: 'stage',
-            stage: data.stage,
-            data: data,
-            fullContent: fullContent
-          });
-        } else if (data.type === 'done') {
-          if (onDone) onDone(data.result || '');
-          return;
         }
       } catch (e) {
         // 如果不是JSON，直接作为文本处理
