@@ -109,6 +109,13 @@ function requestStreamReal(url, data = {}, options = {}) {
                       fullContent: data.full_content,
                       data: data
                     });
+                  } else if (data.type === 'stage') {
+                    if (onChunk) onChunk({
+                      type: 'stage',
+                      stage: data.stage,
+                      data: data,
+                      fullContent: ''
+                    });
                   } else if (data.type === 'done') {
                     if (onDone) onDone(data.full_content);
                     return;
@@ -239,6 +246,16 @@ function parseSSEResponse(responseText, callbacks) {
             fullContent: fullContent,
             data: data
           });
+        } else if (data.type === 'stage') {
+          if (onChunk) onChunk({
+            type: 'stage',
+            stage: data.stage,
+            data: data,
+            fullContent: fullContent
+          });
+        } else if (data.type === 'done') {
+          if (onDone) onDone(data.result || '');
+          return;
         }
       } catch (e) {
         // 如果不是JSON，直接作为文本处理

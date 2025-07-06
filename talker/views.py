@@ -1331,7 +1331,6 @@ def state_machine_api(request):
             from django.http import StreamingHttpResponse
             response = StreamingHttpResponse(generate_sse(), content_type='text/event-stream')
             response['Cache-Control'] = 'no-cache'
-            response['Connection'] = 'keep-alive'
             return response
         else:
             # 非流式响应
@@ -1441,3 +1440,73 @@ def session_state_api(request, session_id):
             'error': f'获取会话状态失败: {str(e)}',
             'success': False
         }, status=500)
+
+@csrf_exempt
+@require_POST
+def timeline_stream_api(request):
+    """Timeline服务SSE接口 - 按阶段推送进度"""
+    try:
+        data = json.loads(request.body or '{}')
+        session_id = data.get('session_id')
+        if not session_id:
+            return JsonResponse({'error': '缺少session_id'}, status=400)
+
+        try:
+            session = TalkSession.objects.get(id=session_id)
+        except TalkSession.DoesNotExist:
+            return JsonResponse({'error': '会话不存在'}, status=404)
+
+        timeline_service = TimelineService()
+
+        def gen():
+            """生成SSE数据流"""
+            try:
+                # Stage 1: 用户画像整合
+                yield f"data: {json.dumps({'type':'stage','stage':'profile_consolidation'})}\n\n"
+                profile_data = timeline_service._stage_1_profile_consolidation(session)
+
+                # Stage 1.5: 地理聚类
+                yield f"data: {json.dumps({'type':'stage','stage':'geographic_clustering'})}\n\n"
+                clusters = timeline_service._stage_1_5_geographic_clustering(session, profile_data['radius_km'])
+
+                # Stage 2: 行程草案生成
+                yield f"data: {json.dumps({'type':'stage','stage':'itinerary_drafting'})}\n\n"
+                daily_itinerary = timeline_service._stage_2_itinerary_drafting(profile_data['user_profile_text'], clusters)
+
+                # Stage 3: 行程评审
+                yield f"data: {json.dumps({'type':'stage','stage':'itinerary_review'})}\n\n"
+                review_feedback = timeline_service._stage_3_itinerary_review(profile_data['user_profile_text'], daily_itinerary)
+
+                # Stage 3.5: 草案修订
+                yield f"data: {json.dumps({'type':'stage','stage':'itinerary_revision'})}\n\n"
+                revised_itinerary = timeline_service._stage_3_5_itinerary_revision(profile_data['user_profile_text'], daily_itinerary, review_feedback)
+
+                # Stage 4: 链式结构生成
+                yield f"data: {json.dumps({'type':'stage','stage':'chain_generation'})}\n\n"
+                itinerary_chain = timeline_service._stage_4_chain_generation(revised_itinerary)
+
+                result = {
+                    'success': True,
+                    'timeline_data': {
+                        'success': True,
+                        'itinerary_chain': itinerary_chain,
+                        'final_text': revised_itinerary
+                    }
+                }
+                yield f"data: {json.dumps({'type':'done','result': result})}\n\n"
+                yield "data: [DONE]\n\n"
+            except Exception as e:
+                error_msg = str(e)
+                yield f"data: {json.dumps({'type':'error','error': error_msg})}\n\n"
+                yield "data: [DONE]\n\n"
+
+        from django.http import StreamingHttpResponse
+        response = StreamingHttpResponse(gen(), content_type='text/event-stream')
+        response['Cache-Control'] = 'no-cache'
+        return response
+
+    except json.JSONDecodeError:
+        return JsonResponse({'error': '无效JSON'}, status=400)
+    except Exception as e:
+        logging.error(f"Timeline SSE接口错误: {e}")
+        return JsonResponse({'error': str(e)}, status=500)

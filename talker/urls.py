@@ -2,13 +2,14 @@ from django.urls import path
 from .views import (
     xiaohongshu_summary, StateMachineView, SessionView, ChatStreamView, 
     DestinationRecommendationView, AddPOIView, RemovePOIView, ListPOIView, 
-    BudgetAnalysisView, state_machine_api, timeline_api, session_state_api
+    BudgetAnalysisView, state_machine_api, timeline_api, session_state_api, timeline_stream_api
 )
  
 urlpatterns = [
     path('xhs/summary/', xiaohongshu_summary, name='xhs_summary'),
     path('state-machine/', StateMachineView.as_view(), name='state_machine'),
     path('state-machine/', state_machine_api, name='state_machine_api'),
+    path('timeline/stream/', timeline_stream_api, name='timeline_stream_api'),
     path('timeline/<str:session_id>/', timeline_api, name='timeline_api'),
     path('session/', SessionView.as_view(), name='session'),
     path('session/<str:session_id>/', SessionView.as_view(), name='session_detail'),

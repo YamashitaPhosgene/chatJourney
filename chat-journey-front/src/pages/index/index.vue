@@ -328,11 +328,18 @@
           
           <!-- 会话状态信息 -->
           <view v-if="sessionInfo && sessionInfo.collected_info && sessionInfo.collected_info.length > 0" class="session-status">
-            <view class="status-title">已收集信息：</view>
-            <view class="status-items">
+            <view class="status-title" @tap="toggleCollectedInfo">
+              <text>已收集信息</text>
+              <text class="collapse-icon" :class="{ expanded: showCollectedInfo }">▼</text>
+            </view>
+            <view v-if="showCollectedInfo" class="status-items">
               <view v-for="info in sessionInfo.collected_info" :key="info" class="status-item">
                 {{ info }}
               </view>
+            </view>
+            <view v-else class="status-summary">
+              <text>{{ sessionInfo.collected_info.length }}条信息</text>
+              <text class="tap-to-expand"></text>
             </view>
           </view>
         </view>
@@ -833,7 +840,9 @@
               </view>
             </view>
           </template>
-          <template v-else>
+          <template v-else-if="jigsawType === 'itinerary'">
+            <!-- 行程标签页 -->
+            <template v-if="itinerary && itinerary.length > 0">
             <!-- 行程预览（纵向timeline） -->
             <view class="timeline">
               <view v-for="(day, dayIdx) in itinerary" :key="day.date">
@@ -915,6 +924,14 @@
                   />
                   <text>简单修改</text>
                 </view>
+                <view class="jigsaw-btn" @tap="regenerateItinerary">
+                  <image
+                    src="/static/icons/loading.svg"
+                    mode="aspectFit"
+                    class="jigsaw-btn-icon"
+                  />
+                  <text>重新生成</text>
+                </view>
               </template>
               <template v-else>
                 <view class="jigsaw-btn" style="width: 100%" @tap="onSaveRoute">
@@ -973,6 +990,76 @@
                 >
               </view>
             </view>
+            </template>
+            
+            <!-- 没有行程数据时显示空状态和生成按钮 -->
+            <template v-else>
+              <view
+                style="
+                  text-align: center;
+                  padding: 60px 20px;
+                  background: #f8f9fa;
+                  border-radius: 16px;
+                  margin: 20px 0;
+                "
+              >
+                <view style="font-size: 48px; margin-bottom: 16px">📅</view>
+                <view
+                  style="
+                    font-size: 16px;
+                    color: #2c4a52;
+                    font-weight: bold;
+                    margin-bottom: 8px;
+                  "
+                >暂无行程数据</view>
+                <view style="font-size: 14px; color: #888; line-height: 1.4; margin-bottom: 24px;">
+                  完成信息收集后，点击下方按钮生成个性化行程
+                </view>
+                
+                <!-- 生成行程按钮 -->
+                <view 
+                  @tap="generateItinerary"
+                  :class="['generate-btn', { 'generate-btn-loading': isGenerating }]"
+                  :style="{
+                    background: isGenerating ? '#ccc' : '#4f7063',
+                    color: 'white',
+                    padding: '12px 24px',
+                    borderRadius: '12px',
+                    fontSize: '16px',
+                    fontWeight: 'bold',
+                    cursor: isGenerating ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.3s ease',
+                    boxShadow: isGenerating ? 'none' : '0 4px 8px rgba(79, 112, 99, 0.3)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }"
+                >
+                  <image
+                    v-if="isGenerating"
+                    src="/static/icons/loading.svg"
+                    style="width: 18px; height: 18px; animation: spin 1s linear infinite;"
+                  />
+                  <text>{{ isGenerating ? '正在生成...' : '生成行程' }}</text>
+                </view>
+                
+                <!-- 生成条件提示 -->
+                <view 
+                  v-if="currentState !== 'COMPLETED' && currentState !== 'CONFIRMATION'"
+                  style="
+                    font-size: 12px;
+                    color: #ff6b6b;
+                    margin-top: 12px;
+                    padding: 8px 12px;
+                    background: rgba(255, 107, 107, 0.1);
+                    border-radius: 8px;
+                    display: inline-block;
+                  "
+                >
+                  ⚠️ 请先完成与AI的对话，收集完整的旅行信息
+                </view>
+              </view>
+            </template>
           </template>
         </scroll-view>
       </view>
@@ -1092,6 +1179,7 @@ export default {
       shouldUpdatePOIAfterReply: false, // 控制是否在大模型回复后更新POI
       locationJigsawLoading: false, // 目的地推荐数据加载状态
       timelineAbortController: null, // Timeline生成请求的取消控制器
+      showCollectedInfo: false, // 控制是否显示已收集信息
     };
   },
   onLoad() {
@@ -1099,6 +1187,24 @@ export default {
     this.statusBarHeight = systemInfo.statusBarHeight;
     this.contentPaddingTop = this.statusBarHeight + this.navContentHeight;
     
+    // ===== 读取本地持久化数据 =====
+    try {
+      const storedChatList = uni.getStorageSync('chatList');
+      if (storedChatList && Array.isArray(storedChatList)) {
+        this.chatList = storedChatList;
+        // 自动选中最后一条会话（如有）
+        if (this.chatList.length > 0) {
+          const lastChat = this.chatList[0];
+          this.switchToChat(lastChat);
+        }
+      }
+      const storedSessionId = uni.getStorageSync('sessionId');
+      if (storedSessionId) {
+        this.sessionId = storedSessionId;
+      }
+    } catch (e) {
+      console.warn('读取本地聊天历史失败:', e);
+    }
     // 如果已有会话ID，获取会话状态
     if (this.sessionId) {
       this.fetchSessionState();
@@ -1210,6 +1316,13 @@ export default {
         }
 
         this.currentChatId = chatId;
+
+        // 持久化到本地
+        try {
+          uni.setStorageSync('chatList', this.chatList);
+        } catch (e) {
+          console.warn('保存聊天历史失败:', e);
+        }
       }
     },
     switchToChat(chat) {
@@ -1218,9 +1331,7 @@ export default {
       this.messages = [...chat.messages];
       this.showWelcome = false;
       this.toggleSidebar();
-      if (chat.itinerary) {
-        this.itinerary = JSON.parse(JSON.stringify(chat.itinerary));
-      }
+      this.itinerary = JSON.parse(JSON.stringify(chat.itinerary));
       if (chat.budget) {
         this.budgetJigsawData = JSON.parse(JSON.stringify(chat.budget));
       }
@@ -1235,6 +1346,12 @@ export default {
         .then((res) => {
           this.sessionId = res.session_id;
           console.log('会话创建成功，sessionId:', this.sessionId);
+          // 持久化 sessionId
+          try {
+            uni.setStorageSync('sessionId', this.sessionId);
+          } catch (e) {
+            console.warn('保存sessionId失败:', e);
+          }
           // 创建会话后立即获取会话状态
           return this.fetchSessionState().then(() => this.sessionId);
         })
@@ -1650,81 +1767,209 @@ export default {
 
     /** 更新行程拼图数据 */
     async updateItineraryData() {
-      // 根据收集的信息生成行程
-      if (this.currentState === 'COMPLETED' || this.currentState === 'CONFIRMATION') {
-        console.log('更新行程拼图数据 - 开始生成Timeline行程链');
+      // 只检查和显示现有的行程数据，不主动生成
+      console.log('切换到行程标签页 - 检查现有行程数据');
+      
+      // 如果已有行程数据，直接显示
+      if (this.itinerary && this.itinerary.length > 0) {
+        console.log('已有行程数据，直接显示');
+        return;
+      }
+      
+      // 如果没有行程数据，显示空状态和生成按钮
+      console.log('暂无行程数据，等待用户手动生成');
+    },
+
+    /** 手动生成行程链 */
+    async generateItinerary() {
+      // 若启用流式模式，改用SSE版本
+      if (this.isStreamMode) {
+        await this.generateItineraryStream();
+        return;
+      }
+      // 检查是否满足生成条件
+      if (this.currentState !== 'COMPLETED' && this.currentState !== 'CONFIRMATION') {
+        uni.showToast({
+          title: "请先完成信息收集",
+          icon: "none"
+        });
+        return;
+      }
+      
+      if (!this.sessionId) {
+        uni.showToast({
+          title: "请先创建会话",
+          icon: "none"
+        });
+        return;
+      }
+      
+      console.log('手动生成行程链 - 开始生成Timeline行程链');
+      
+      try {
+        // 显示生成状态
+        this.isGenerating = true;
         
-        try {
-          // 显示生成状态
-          this.isGenerating = true;
-          
-          // 添加状态消息
-          this.messages.push({
-            type: "status",
-            content: "行程规划中，正在生成个性化行程链..."
-          });
-          this.scrollToBottom();
-          
-          // 设置取消标志
-          this.timelineAbortController = { cancelled: false };
-          
-          // 调用Timeline服务API
-          const response = await request(`/api/talker/timeline/${this.sessionId}/`, {}, "GET");
-          
-          // 检查是否已被取消
-          if (this.timelineAbortController && this.timelineAbortController.cancelled) {
-            console.log('Timeline生成已被用户取消');
-            return;
-          }
-          
-          if (response.success && response.timeline_data) {
-            // 转换Timeline数据格式为前端itinerary格式
-            this.itinerary = this.convertTimelineToItinerary(response.timeline_data);
-            
-            // 移除生成状态消息
-            this.messages = this.messages.filter(
-              (msg) => !(msg.type === "status" && msg.content.includes("行程规划中"))
-            );
-            
-            // 添加完成状态
-            this.messages.push({
-              type: "status",
-              content: "行程链生成完成"
-            });
-            
-            console.log('Timeline行程链生成成功:', this.itinerary);
-          } else {
-            throw new Error(response.error || '行程生成失败');
-          }
-        } catch (error) {
-          console.error('Timeline行程生成失败:', error);
+        // 添加状态消息
+        this.messages.push({
+          type: "status",
+          content: "行程规划中，正在生成个性化行程链..."
+        });
+        this.scrollToBottom();
+        
+        // 设置取消标志
+        this.timelineAbortController = { cancelled: false };
+        
+        // 调用Timeline服务API
+        const response = await request(`/api/talker/timeline/${this.sessionId}/`, {}, "GET");
+        
+        // 检查是否已被取消
+        if (this.timelineAbortController && this.timelineAbortController.cancelled) {
+          console.log('Timeline生成已被用户取消');
+          return;
+        }
+        
+        if (response.success && response.timeline_data) {
+          // 先同步会话 POI 数据，确保图片匹配时可用
+          await this.loadMyPoisData();
+          // 转换 Timeline 数据格式为前端 itinerary 格式
+          this.itinerary = this.convertTimelineToItinerary(response.timeline_data);
           
           // 移除生成状态消息
           this.messages = this.messages.filter(
             (msg) => !(msg.type === "status" && msg.content.includes("行程规划中"))
           );
           
-          // 如果是用户取消的请求，不显示错误消息
-          if (this.timelineAbortController && this.timelineAbortController.cancelled) {
-            console.log('Timeline生成已被用户取消');
-            return;
-          }
-          
-          // 显示错误消息
+          // 添加完成状态
           this.messages.push({
-            type: "ai",
-            content: "⚠️ 行程生成失败，为您使用默认行程模板",
-            time: new Date().toLocaleTimeString(),
+            type: "status",
+            content: "行程链生成完成"
           });
           
-          // 使用示例数据作为后备
-        this.itinerary = this.getSampleItinerary();
-        } finally {
-          this.isGenerating = false;
-          this.timelineAbortController = null;
-          this.scrollToBottom();
+          console.log('Timeline行程链生成成功:', this.itinerary);
+          
+          uni.showToast({
+            title: "行程生成成功",
+            icon: "success"
+          });
+        } else {
+          throw new Error(response.error || '行程生成失败');
         }
+      } catch (error) {
+        console.error('Timeline行程生成失败:', error);
+        
+        // 移除生成状态消息
+        this.messages = this.messages.filter(
+          (msg) => !(msg.type === "status" && msg.content.includes("行程规划中"))
+        );
+        
+        // 如果是用户取消的请求，不显示错误消息
+        if (this.timelineAbortController && this.timelineAbortController.cancelled) {
+          console.log('Timeline生成已被用户取消');
+          return;
+        }
+        
+        // 显示错误消息
+        uni.showToast({
+          title: "行程生成失败",
+          icon: "error"
+        });
+        
+        this.messages.push({
+          type: "ai",
+          content: `⚠️ 行程生成失败：${error.message || '未知错误'}`,
+          time: new Date().toLocaleTimeString(),
+        });
+        
+      } finally {
+        this.isGenerating = false;
+        this.timelineAbortController = null;
+        this.scrollToBottom();
       }
+    },
+
+    /** 流式生成行程链（SSE） */
+    async generateItineraryStream() {
+      // 条件检查与原同步版本相同
+      if (this.currentState !== 'COMPLETED' && this.currentState !== 'CONFIRMATION') {
+        uni.showToast({ title: '请先完成信息收集', icon: 'none' });
+        return;
+      }
+      if (!this.sessionId) {
+        uni.showToast({ title: '请先创建会话', icon: 'none' });
+        return;
+      }
+
+      this.isGenerating = true;
+      // 添加初始状态消息
+      this.messages.push({
+        type: 'status',
+        content: '行程规划中… (初始化)',
+      });
+      this.scrollToBottom();
+
+      const streamOptions = {
+        onChunk: (chunk) => {
+          if (chunk.type === 'stage') {
+            // 更新状态消息内容
+            const stageMap = {
+              profile_consolidation: '整合用户画像…',
+              geographic_clustering: '地理聚类…',
+              itinerary_drafting: '生成草案…',
+              itinerary_review: '结构化评审…',
+              itinerary_revision: '修订草案…',
+              chain_generation: '生成链式结构…',
+            };
+            const text = stageMap[chunk.stage] || chunk.stage;
+            // 找到最后一条status并替换
+            const idx = this.messages.length - 1;
+            if (idx >= 0 && this.messages[idx].type === 'status') {
+              this.$set(this.messages, idx, { ...this.messages[idx], content: `行程规划中… (${text})` });
+            }
+          }
+        },
+        onDone: (fullContent) => {
+          // fullContent 可能是 result 对象字符串
+          try {
+            const dataObj = typeof fullContent === 'string' ? JSON.parse(fullContent) : fullContent;
+            if (dataObj && dataObj.result && dataObj.result.timeline_data) {
+              this.itinerary = this.convertTimelineToItinerary(dataObj.result.timeline_data);
+            }
+          } catch (e) {
+            console.warn('解析SSE完成数据失败', e);
+          }
+          this._finishStreamTimeline(true);
+        },
+        onError: (err) => {
+          console.error('Timeline SSE 错误:', err);
+          this._finishStreamTimeline(false, err);
+        },
+      };
+
+      requestStream('/api/talker/timeline/stream/', { session_id: this.sessionId }, streamOptions)
+        .then((controller) => {
+          this.timelineAbortController = controller;
+        })
+        .catch((err) => {
+          console.error('Timeline SSE 请求失败:', err);
+          this._finishStreamTimeline(false, err);
+        });
+    },
+
+    /** 结束流式行程链生成后的处理 */
+    _finishStreamTimeline(success, error = null) {
+      // 移除最后的status
+      this.messages = this.messages.filter((m) => !(m.type === 'status'));
+      if (success) {
+        this.messages.push({ type: 'status', content: '行程链生成完成' });
+        uni.showToast({ title: '行程生成成功', icon: 'success' });
+      } else {
+        this.messages.push({ type: 'ai', content: `⚠️ 行程生成失败：${error ? error.toString() : '未知错误'}`, time: new Date().toLocaleTimeString() });
+        uni.showToast({ title: '行程生成失败', icon: 'error' });
+      }
+      this.isGenerating = false;
+      this.timelineAbortController = null;
+      this.scrollToBottom();
     },
 
     /** 将Timeline数据转换为前端itinerary格式 */
@@ -1747,9 +1992,11 @@ export default {
           
           activities.forEach((activity, activityIndex) => {
             const event = {
-              time: activity.time || `${8 + activityIndex * 2}:00`,
+              // 兼容后端返回的 time_period 字段，将其映射为大致时间点
+              time: activity.time || this.mapTimePeriodToClock(activity.time_period, activityIndex) || `${8 + activityIndex * 2}:00`,
               image: this.getActivityImage(activity),
-              location: activity.location || activity.activity || '未知地点',
+              // 兼容后端返回的 place 字段
+              location: activity.place || activity.location || activity.activity || '未知地点',
               type: this.getActivityType(activity),
               duration: this.getActivityDuration(activity)
             };
@@ -1769,34 +2016,60 @@ export default {
         });
         
         console.log('Timeline数据转换完成:', convertedItinerary);
-        return convertedItinerary.length > 0 ? convertedItinerary : this.getSampleItinerary();
+        return convertedItinerary; // 不再返回示例数据
         
       } catch (error) {
         console.error('Timeline数据转换失败:', error);
-        return this.getSampleItinerary();
+        return []; // 失败时返回空数组，前端UI会提示用户
       }
+    },
+
+    /** 将 time_period 映射为大致时间点 */
+    mapTimePeriodToClock(timePeriod, index) {
+      const mapping = {
+        '清晨': '06:00',
+        '上午': '09:00',
+        '中午': '12:00',
+        '下午': '15:00',
+        '傍晚': '18:00',
+        '夜晚': '21:00'
+      };
+      return mapping[timePeriod] || null;
     },
 
     /** 获取活动图片 */
     getActivityImage(activity) {
-      const activityName = (activity.activity || activity.location || '').toLowerCase();
-      
-      if (activityName.includes('机场') || activityName.includes('airport')) {
-        return '/static/images/airport1.jpg';
-      } else if (activityName.includes('饭店') || activityName.includes('餐厅') || 
-                 activityName.includes('美食') || activityName.includes('用餐')) {
-        return '/static/images/food.jpg';
-      } else if (activityName.includes('花') || activityName.includes('公园') || 
-                 activityName.includes('景点') || activityName.includes('游览')) {
-        return '/static/images/flower.jpg';
-      } else {
-        return '/static/images/banner.jpg';
+      // 1) 优先使用 activity 本身携带的 image 字段
+      if (activity && activity.image && typeof activity.image === 'string' && activity.image.trim()) {
+        return activity.image;
       }
+      // 2) 尝试在已加载的会话 POI 列表中，根据名称匹配获取图片
+      const actName = (activity.place || activity.location || activity.activity || '').toLowerCase();
+      if (actName && Array.isArray(this.myPoisData) && this.myPoisData.length > 0) {
+        const matchedPoi = this.myPoisData.find(poi => {
+          const poiName = (poi.name || '').toLowerCase();
+          return poiName && (actName.includes(poiName) || poiName.includes(actName));
+        });
+        if (matchedPoi && matchedPoi.image) {
+          return matchedPoi.image;
+        }
+      }
+      // 3) 回退到启发式默认图片
+      if (actName.includes('机场') || actName.includes('airport')) {
+        return '/static/images/airport1.jpg';
+      } else if (actName.includes('饭店') || actName.includes('餐厅') ||
+                 actName.includes('美食') || actName.includes('用餐')) {
+        return '/static/images/food.jpg';
+      } else if (actName.includes('花') || actName.includes('公园') ||
+                 actName.includes('景点') || actName.includes('游览')) {
+        return '/static/images/flower.jpg';
+      }
+      return '/static/images/banner.jpg';
     },
 
     /** 获取活动类型 */
     getActivityType(activity) {
-      const activityName = (activity.activity || activity.location || '').toLowerCase();
+      const activityName = (activity.place || activity.activity || activity.location || '').toLowerCase();
       
       if (activityName.includes('机场') || activityName.includes('交通')) {
         return '交通';
@@ -1974,9 +2247,9 @@ export default {
             if (this.shouldAutoScroll && !this.isUserScrolling) {
               if (!this.lastScrollTime || Date.now() - this.lastScrollTime > 500) {
                 this.lastScrollTime = Date.now();
-                this.$nextTick(() => {
-                  this.scrollToBottom();
-                });
+              this.$nextTick(() => {
+                this.scrollToBottom();
+              });
               }
             }
           }, 10); // 10ms延迟
@@ -2174,136 +2447,6 @@ export default {
       this.shouldAutoScroll = true;
       this.isUserScrolling = false;
       this.scrollToBottom();
-    },
-    getSampleItinerary() {
-      return [
-        {
-          date: "4月12日",
-          weatherIcon: "☀️",
-          temperature: "32/39℃",
-          events: [
-            {
-              time: "08:00",
-              image: "/static/images/airport1.jpg",
-              location: "成都双流国际机场",
-              travel: { duration: "1.5h", method: "乘飞机前往" },
-              type: "交通",
-              duration: 90,
-            },
-            {
-              time: "09:30",
-              image: "/static/images/airport2.jpg",
-              location: "昆明长水机场",
-              travel: { duration: "2.5h", method: "乘大巴前往" },
-              type: "交通",
-              duration: 150,
-            },
-            {
-              time: "12:00",
-              image: "/static/images/flower.jpg",
-              location: "罗平油菜花田入口",
-              travel: { duration: "15min", method: "步行" },
-              type: "游玩",
-              duration: 120,
-            },
-            {
-              time: "12:15 ~ 13:45",
-              subtext: "用餐",
-              image: "/static/images/food.jpg",
-              location: "当地XXX饭店",
-              travel: { duration: "30min", method: "步行" },
-              type: "吃饭",
-              duration: 90,
-            },
-          ],
-        },
-        {
-          date: "4月13日",
-          weatherIcon: "⛅",
-          temperature: "28/35℃",
-          events: [
-            {
-              time: "08:30",
-              image: "/static/images/flower.jpg",
-              location: "罗平油菜花田深处",
-              travel: { duration: "20min", method: "步行" },
-              type: "游玩",
-              duration: 120,
-            },
-            {
-              time: "10:30",
-              image: "/static/images/food.jpg",
-              location: "花田农家乐",
-              travel: { duration: "10min", method: "步行" },
-              type: "吃饭",
-              duration: 60,
-            },
-            {
-              time: "12:00",
-              image: "/static/images/airport2.jpg",
-              location: "昆明长水机场",
-              travel: { duration: "2h", method: "乘大巴返回" },
-              type: "交通",
-              duration: 120,
-            },
-            {
-              time: "14:30",
-              image: "/static/images/airport1.jpg",
-              location: "成都双流国际机场",
-              travel: { duration: "2h", method: "乘飞机返回" },
-              type: "交通",
-              duration: 120,
-            },
-            {
-              time: "17:00",
-              image: "/static/images/food.jpg",
-              location: "成都火锅店",
-              travel: { duration: "30min", method: "步行" },
-              type: "吃饭",
-              duration: 90,
-            },
-          ],
-        },
-        {
-          date: "4月14日",
-          weatherIcon: "☁️",
-          temperature: "25/32℃",
-          events: [
-            {
-              time: "09:00",
-              image: "/static/images/flower.jpg",
-              location: "成都人民公园",
-              travel: { duration: "20min", method: "步行" },
-              type: "游玩",
-              duration: 120,
-            },
-            {
-              time: "11:30",
-              image: "/static/images/food.jpg",
-              location: "公园茶馆",
-              travel: { duration: "10min", method: "步行" },
-              type: "吃饭",
-              duration: 60,
-            },
-            {
-              time: "13:00",
-              image: "/static/images/flower.jpg",
-              location: "宽窄巷子",
-              travel: { duration: "30min", method: "步行" },
-              type: "游玩",
-              duration: 120,
-            },
-            {
-              time: "15:30",
-              image: "/static/images/food.jpg",
-              location: "成都小吃街",
-              travel: { duration: "20min", method: "步行" },
-              type: "吃饭",
-              duration: 60,
-            },
-          ],
-        },
-      ];
     },
     toggleJigsaw() {
       this.showJigsaw = !this.showJigsaw;
@@ -2582,6 +2725,25 @@ export default {
       // 重置滚动状态
       this.isUserScrolling = false;
       this.shouldAutoScroll = true;
+    },
+    toggleCollectedInfo() {
+      this.showCollectedInfo = !this.showCollectedInfo;
+    },
+    /** 重新生成行程链（清除现有行程后再次生成） */
+    regenerateItinerary() {
+      if (this.isGenerating) {
+        return;
+      }
+      uni.showModal({
+        title: '重新生成行程',
+        content: '该操作将基于已收集的信息重新生成新的行程，是否继续？',
+        success: (res) => {
+          if (res.confirm) {
+            this.itinerary = [];
+            this.generateItinerary();
+          }
+        }
+      });
     },
   },
 };
@@ -3663,33 +3825,40 @@ export default {
 /* 会话状态信息样式 */
 .session-status {
   background: #f0f8ff;
-  border-radius: 12px;
-  padding: 12px;
-  margin-top: 12px;
-  border-left: 4px solid #4a90e2;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-top: 8px;
+  border-left: 3px solid #4a90e2;
+  transition: all 0.2s ease;
 }
 
 .status-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: bold;
   color: #2c4a52;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
 }
 
 .status-items {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .status-item {
-  font-size: 13px;
+  font-size: 12px;
   color: #4a90e2;
   background: rgba(74, 144, 226, 0.1);
-  padding: 4px 8px;
-  border-radius: 8px;
+  padding: 3px 6px;
+  border-radius: 6px;
   display: inline-block;
   width: fit-content;
+  border: 1px solid rgba(74, 144, 226, 0.2);
 }
 
 /* 分页控件样式 */
@@ -3839,5 +4008,31 @@ export default {
   width: 16px;
   height: 16px;
   transform: rotate(90deg); /* 将发送图标旋转90度作为向下箭头 */
+}
+
+.collapse-icon {
+  font-size: 12px;
+  margin-left: 4px;
+  cursor: pointer;
+  transition: transform 0.2s;
+
+  &.expanded {
+    transform: rotate(180deg);
+  }
+}
+
+.status-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  color: #8a9ea7;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+.tap-to-expand {
+  font-size: 12px;
+  color: #4CAF50;
 }
 </style>

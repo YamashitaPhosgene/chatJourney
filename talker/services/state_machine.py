@@ -158,15 +158,20 @@ class TravelAssistantFSM:
     
     def _on_enter_fill_profile(self, *args, **kwargs):
         """进入填充用户画像状态"""
-        # 重置用户画像询问标志 - 确保每次进入都从第一次开始
-        self._profile_asked_basic = False
-        self._profile_asked_again = False
-        logging.info(f"进入用户画像状态，重置标志: _profile_asked_basic={self._profile_asked_basic}, _profile_asked_again={self._profile_asked_again}")
+        # 初始化用户画像询问标志（仅在第一次进入时初始化）
+        if not hasattr(self, '_profile_asked_basic') or self._profile_asked_basic is None:
+            self._profile_asked_basic = False
+            self._profile_asked_again = False
+            logging.info(f"第一次进入用户画像状态，初始化标志: _profile_asked_basic={self._profile_asked_basic}, _profile_asked_again={self._profile_asked_again}")
+        else:
+            logging.info(f"重新进入用户画像状态，保持标志: _profile_asked_basic={self._profile_asked_basic}, _profile_asked_again={self._profile_asked_again}")
         
         self._set_session_state({
             "phase": "slot_filling",
             "intent": "fill_profile",
-            "context": "等待用户提供同行人员和用户画像"
+            "context": "等待用户提供同行人员和用户画像",
+            "profile_asked_basic": self._profile_asked_basic,
+            "profile_asked_again": self._profile_asked_again
         })
     
     def _on_enter_confirmation(self, *args, **kwargs):
@@ -1008,10 +1013,12 @@ class TravelAssistantFSM:
                 if not self._profile_asked_basic:
                     # 第一次回答，标记已询问基础信息，进行深化询问
                     self._profile_asked_basic = True
+                    self._save_profile_flags_to_session()
                     return self.ask_profile_extend(text)
                 elif self._profile_asked_basic and not self._profile_asked_again:
                     # 已经进行过基础询问，但还没有进行过again询问，进行深化询问
                     self._profile_asked_again = True
+                    self._save_profile_flags_to_session()
                     return self.ask_profile_extend(text)
                 else:
                     # 已经进行过深化询问，转移到确认状态
@@ -1022,6 +1029,7 @@ class TravelAssistantFSM:
                 if not self._profile_asked_basic:
                     # 第一次询问，标记已询问基础信息
                     self._profile_asked_basic = True
+                    self._save_profile_flags_to_session()
                     # 使用静默模式预检查状态转换结果，避免双重回复
                     self.slot_invalid_profile(text)  # type: ignore
                     return self.ask_profile_again(text)
@@ -1397,11 +1405,12 @@ class TravelAssistantFSM:
                         self.machine.set_state(target_state)
                         logging.info(f"状态机状态已恢复: {self.state}")
                         
-                        # 如果恢复到用户画像状态，重置profile相关标志
+                        # 如果恢复到用户画像状态，从session中恢复标志位
                         if target_state == 'SLOT_FILLING_PROFILE':
-                            self._profile_asked_basic = False
-                            self._profile_asked_again = False
-                            logging.info(f"加载会话时重置用户画像标志: _profile_asked_basic={self._profile_asked_basic}, _profile_asked_again={self._profile_asked_again}")
+                            session_state = self.session.state or {}
+                            self._profile_asked_basic = session_state.get('profile_asked_basic', False)
+                            self._profile_asked_again = session_state.get('profile_asked_again', False)
+                            logging.info(f"加载会话时恢复用户画像标志: _profile_asked_basic={self._profile_asked_basic}, _profile_asked_again={self._profile_asked_again}")
             
             logging.info(f"加载会话成功: {session_id}, 当前状态: {self.state}")
             return True
@@ -1555,6 +1564,16 @@ class TravelAssistantFSM:
         if hasattr(self, '_latest_poi_search_result'):
             return self._latest_poi_search_result
         return None
+    
+    def _save_profile_flags_to_session(self):
+        """将用户画像标志位保存到session中"""
+        if self.session and self.session.state:
+            self.session.state['profile_asked_basic'] = self._profile_asked_basic
+            self.session.state['profile_asked_again'] = self._profile_asked_again
+            self.session.save()
+            logging.error(f"[SAVE_FLAGS] 保存标志位到session: _profile_asked_basic={self._profile_asked_basic}, _profile_asked_again={self._profile_asked_again}")
+        else:
+            logging.error(f"[SAVE_FLAGS] 无法保存标志位: session或session.state为空")
     
     # ========== 流式处理方法 ==========
     
@@ -2069,12 +2088,20 @@ class TravelAssistantFSM:
     
     def ask_profile_stream(self, *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
         """询问用户画像（流式版本）"""
-        logging.info("询问用户画像（流式）")
+        logging.error(f"[PROFILE_STREAM] === ask_profile_stream 开始 ===")
+        logging.error(f"[PROFILE_STREAM] 当前状态: {self.state}")
+        logging.error(f"[PROFILE_STREAM] _profile_asked_basic: {getattr(self, '_profile_asked_basic', False)}")
+        logging.error(f"[PROFILE_STREAM] _profile_asked_again: {getattr(self, '_profile_asked_again', False)}")
+        
         context_info = self._prepare_context_info()
         state_info = self.session.state or {}
         collected_info = self._format_collected_info()
         
+        logging.info(f"[PROFILE_STREAM] 会话状态信息: {state_info}")
+        logging.info(f"[PROFILE_STREAM] 已收集信息: {collected_info}")
+        
         try:
+            logging.info(f"[PROFILE_STREAM] 调用chat_service.process_chat")
             response_stream = self.chat_service.process_chat(
                 context_info, 
                 chat_type="ask_profile",
@@ -2085,10 +2112,12 @@ class TravelAssistantFSM:
                 stream=True
             )
             
+            logging.info(f"[PROFILE_STREAM] 开始处理流式响应")
             yield from self._process_stream_response(response_stream, '请告诉我您的同行人员和旅行偏好。')
+            logging.info(f"[PROFILE_STREAM] 流式响应处理完成")
             
         except Exception as e:
-            logging.error(f"流式处理错误: {e}")
+            logging.error(f"[PROFILE_STREAM] 流式处理错误: {e}")
             default_response = '请告诉我您的同行人员和旅行偏好。'
             self.add_assistant_message(default_response)
             yield {
@@ -2096,6 +2125,8 @@ class TravelAssistantFSM:
                 'error': str(e),
                 'full_content': default_response
             }
+        
+        logging.info(f"[PROFILE_STREAM] === ask_profile_stream 结束 ===")
     
     def ask_profile_again_stream(self, user_input: str = "", silent_mode: bool = False, *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
         """重新询问用户画像（流式版本）
@@ -2104,17 +2135,28 @@ class TravelAssistantFSM:
             user_input: 用户输入
             silent_mode: 静默模式，如果为True，则收集完整回复但不yield给前端（用于状态转换预检查）
         """
-        logging.info("重新询问用户画像（流式）")
+        logging.error(f"[PROFILE_AGAIN_STREAM] === ask_profile_again_stream 开始 ===")
+        logging.error(f"[PROFILE_AGAIN_STREAM] 当前状态: {self.state}")
+        logging.error(f"[PROFILE_AGAIN_STREAM] 用户输入: {user_input[:100] if user_input else 'None'}")
+        logging.error(f"[PROFILE_AGAIN_STREAM] 静默模式: {silent_mode}")
+        logging.error(f"[PROFILE_AGAIN_STREAM] _profile_asked_basic: {getattr(self, '_profile_asked_basic', False)}")
+        logging.error(f"[PROFILE_AGAIN_STREAM] _profile_asked_again: {getattr(self, '_profile_asked_again', False)}")
+        
         context_info = self._prepare_context_info()
         state_info = self.session.state or {}
         collected_info = self._format_collected_info()
+        
+        logging.info(f"[PROFILE_AGAIN_STREAM] 会话状态信息: {state_info}")
+        logging.info(f"[PROFILE_AGAIN_STREAM] 已收集信息: {collected_info}")
         
         # 构建包含用户刚才回答的上下文
         additional_context = ""
         if user_input:
             additional_context = f"\n用户刚才的回答：{user_input}\n注意：用户刚才的回答中缺少一些信息，请自然地引导用户提供更多关于同行人员和旅行偏好的信息。"
+            logging.info(f"[PROFILE_AGAIN_STREAM] 构建附加上下文: {additional_context[:200]}")
         
         try:
+            logging.info(f"[PROFILE_AGAIN_STREAM] 调用chat_service.process_chat")
             response_stream = self.chat_service.process_chat(
                 context_info + additional_context, 
                 chat_type="ask_profile_again",
@@ -2125,22 +2167,27 @@ class TravelAssistantFSM:
                 stream=True
             )
             
+            logging.info(f"[PROFILE_AGAIN_STREAM] 开始处理流式响应")
             full_content = ""
             for chunk in response_stream:
+                logging.info(f"[PROFILE_AGAIN_STREAM] 接收chunk类型: {chunk.get('type', 'unknown')}")
                 if chunk['type'] == 'content':
                     full_content += chunk['chunk']
                     
                     # 静默模式：不yield内容给前端
                     if not silent_mode:
+                        logging.info(f"[PROFILE_AGAIN_STREAM] 正常模式yield内容")
                         yield {
                             'type': 'content',
                             'chunk': chunk['chunk'],
                             'full_content': full_content
                         }
+                    else:
+                        logging.info(f"[PROFILE_AGAIN_STREAM] 静默模式跳过内容yield")
                 elif chunk['type'] == 'done':
                     # 静默模式：不保存到历史记录，也不yield给前端
                     if silent_mode:
-                        logging.info(f"[SILENT_MODE] 用户画像again流式回复（不保存）: {full_content[:50]}...")
+                        logging.info(f"[PROFILE_AGAIN_STREAM] 静默模式完成: {full_content[:50]}...")
                         yield {
                             'type': 'silent_done',
                             'full_content': full_content
@@ -2148,6 +2195,7 @@ class TravelAssistantFSM:
                         return
                     
                     # 正常模式：保存到历史记录并yield给前端
+                    logging.info(f"[PROFILE_AGAIN_STREAM] 正常模式完成，保存消息: {full_content[:50]}...")
                     self.add_assistant_message(full_content)
                     yield {
                         'type': 'done',
@@ -2157,15 +2205,18 @@ class TravelAssistantFSM:
                 elif chunk['type'] == 'event':
                     # 静默模式：不yield事件给前端
                     if not silent_mode:
+                        logging.info(f"[PROFILE_AGAIN_STREAM] 正常模式yield事件")
                         yield chunk
+                    else:
+                        logging.info(f"[PROFILE_AGAIN_STREAM] 静默模式跳过事件")
                         
         except Exception as e:
-            logging.error(f"流式处理错误: {e}")
+            logging.error(f"[PROFILE_AGAIN_STREAM] 流式处理错误: {e}")
             default_response = '请重新告诉我您的同行人员和旅行偏好。'
             
             # 静默模式：不保存也不yield给前端
             if silent_mode:
-                logging.info(f"[SILENT_MODE] 用户画像again错误回复（不保存）: {default_response}")
+                logging.info(f"[PROFILE_AGAIN_STREAM] 静默模式错误: {default_response}")
                 yield {
                     'type': 'silent_error',
                     'error': str(e),
@@ -2174,12 +2225,15 @@ class TravelAssistantFSM:
                 return
             
             # 正常模式：保存并yield给前端
+            logging.error(f"[PROFILE_AGAIN_STREAM] 正常模式错误，保存默认响应")
             self.add_assistant_message(default_response)
             yield {
                 'type': 'error',
                 'error': str(e),
                 'full_content': default_response
             }
+        
+        logging.info(f"[PROFILE_AGAIN_STREAM] === ask_profile_again_stream 结束 ===")
     
     def ask_profile_extend_stream(self, user_input: str = "", silent_mode: bool = False, *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
         """深化询问用户画像（流式版本）
@@ -2188,17 +2242,28 @@ class TravelAssistantFSM:
             user_input: 用户输入
             silent_mode: 静默模式，如果为True，则收集完整回复但不yield给前端（用于状态转换预检查）
         """
-        logging.info("深化询问用户画像（流式）")
+        logging.error(f"[PROFILE_EXTEND_STREAM] === ask_profile_extend_stream 开始 ===")
+        logging.error(f"[PROFILE_EXTEND_STREAM] 当前状态: {self.state}")
+        logging.error(f"[PROFILE_EXTEND_STREAM] 用户输入: {user_input[:100] if user_input else 'None'}")
+        logging.error(f"[PROFILE_EXTEND_STREAM] 静默模式: {silent_mode}")
+        logging.error(f"[PROFILE_EXTEND_STREAM] _profile_asked_basic: {getattr(self, '_profile_asked_basic', False)}")
+        logging.error(f"[PROFILE_EXTEND_STREAM] _profile_asked_again: {getattr(self, '_profile_asked_again', False)}")
+        
         context_info = self._prepare_context_info()
         state_info = self.session.state or {}
         collected_info = self._format_collected_info()
+        
+        logging.info(f"[PROFILE_EXTEND_STREAM] 会话状态信息: {state_info}")
+        logging.info(f"[PROFILE_EXTEND_STREAM] 已收集信息: {collected_info}")
         
         # 构建包含用户刚才回答的上下文
         additional_context = ""
         if user_input:
             additional_context = f"\n用户刚才的回答：{user_input}\n任务：根据用户的回答，进行纵向和横向拓展询问。纵向：深入询问用户提到的具体偏好（如具体的美食类型、具体的文化景点等）。横向：询问用户未提及但相关的信息（如年龄、职业、特殊需求等）。"
+            logging.info(f"[PROFILE_EXTEND_STREAM] 构建附加上下文: {additional_context[:200]}")
         
         try:
+            logging.info(f"[PROFILE_EXTEND_STREAM] 调用chat_service.process_chat")
             response_stream = self.chat_service.process_chat(
                 context_info + additional_context, 
                 chat_type="ask_profile_extend",
@@ -2209,22 +2274,27 @@ class TravelAssistantFSM:
                 stream=True
             )
             
+            logging.info(f"[PROFILE_EXTEND_STREAM] 开始处理流式响应")
             full_content = ""
             for chunk in response_stream:
+                logging.info(f"[PROFILE_EXTEND_STREAM] 接收chunk类型: {chunk.get('type', 'unknown')}")
                 if chunk['type'] == 'content':
                     full_content += chunk['chunk']
                     
                     # 静默模式：不yield内容给前端
                     if not silent_mode:
+                        logging.info(f"[PROFILE_EXTEND_STREAM] 正常模式yield内容")
                         yield {
                             'type': 'content',
                             'chunk': chunk['chunk'],
                             'full_content': full_content
                         }
+                    else:
+                        logging.info(f"[PROFILE_EXTEND_STREAM] 静默模式跳过内容yield")
                 elif chunk['type'] == 'done':
                     # 静默模式：不保存到历史记录，也不yield给前端
                     if silent_mode:
-                        logging.info(f"[SILENT_MODE] 用户画像extend流式回复（不保存）: {full_content[:50]}...")
+                        logging.info(f"[PROFILE_EXTEND_STREAM] 静默模式完成: {full_content[:50]}...")
                         yield {
                             'type': 'silent_done',
                             'full_content': full_content
@@ -2232,6 +2302,7 @@ class TravelAssistantFSM:
                         return
                     
                     # 正常模式：保存到历史记录并yield给前端
+                    logging.info(f"[PROFILE_EXTEND_STREAM] 正常模式完成，保存消息: {full_content[:50]}...")
                     self.add_assistant_message(full_content)
                     yield {
                         'type': 'done',
@@ -2241,15 +2312,18 @@ class TravelAssistantFSM:
                 elif chunk['type'] == 'event':
                     # 静默模式：不yield事件给前端
                     if not silent_mode:
+                        logging.info(f"[PROFILE_EXTEND_STREAM] 正常模式yield事件")
                         yield chunk
+                    else:
+                        logging.info(f"[PROFILE_EXTEND_STREAM] 静默模式跳过事件")
                         
         except Exception as e:
-            logging.error(f"流式处理错误: {e}")
+            logging.error(f"[PROFILE_EXTEND_STREAM] 流式处理错误: {e}")
             default_response = '请告诉我更多关于您的旅行偏好。'
             
             # 静默模式：不保存也不yield给前端
             if silent_mode:
-                logging.info(f"[SILENT_MODE] 用户画像extend错误回复（不保存）: {default_response}")
+                logging.info(f"[PROFILE_EXTEND_STREAM] 静默模式错误: {default_response}")
                 yield {
                     'type': 'silent_error',
                     'error': str(e),
@@ -2258,12 +2332,15 @@ class TravelAssistantFSM:
                 return
             
             # 正常模式：保存并yield给前端
+            logging.error(f"[PROFILE_EXTEND_STREAM] 正常模式错误，保存默认响应")
             self.add_assistant_message(default_response)
             yield {
                 'type': 'error',
                 'error': str(e),
                 'full_content': default_response
             }
+        
+        logging.info(f"[PROFILE_EXTEND_STREAM] === ask_profile_extend_stream 结束 ===")
     
     def ask_confirmation_stream(self, *args, **kwargs) -> Generator[Dict[str, Any], None, None]:
         """询问确认（流式版本）"""
@@ -2681,29 +2758,45 @@ class TravelAssistantFSM:
                 return
                 
         elif current_state == 'SLOT_FILLING_PROFILE':
+            logging.error(f"[HANDLE_PROFILE] === 处理SLOT_FILLING_PROFILE状态 ===")
+            logging.error(f"[HANDLE_PROFILE] 当前标志位 - _profile_asked_basic: {getattr(self, '_profile_asked_basic', False)}")
+            logging.error(f"[HANDLE_PROFILE] 当前标志位 - _profile_asked_again: {getattr(self, '_profile_asked_again', False)}")
+            
             # 检查用户是否提供了用户画像信息
-            if self._has_profile_info(text):
+            has_profile_info = self._has_profile_info(text)
+            logging.error(f"[HANDLE_PROFILE] _has_profile_info检查结果: {has_profile_info}")
+            
+            if has_profile_info:
+                logging.error(f"[HANDLE_PROFILE] 用户提供了用户画像信息，检查下一步处理")
                 # 用户提供了用户画像信息，检查是否已经进行过深化询问
                 if not self._profile_asked_basic:
                     # 第一次回答，标记已询问基础信息，进行深化询问
+                    logging.error(f"[HANDLE_PROFILE] 第一次提供画像信息，设置_profile_asked_basic=True，调用extend")
                     self._profile_asked_basic = True
+                    self._save_profile_flags_to_session()
                     yield from self.ask_profile_extend_stream(text)
                     return
                 elif self._profile_asked_basic and not self._profile_asked_again:
                     # 已经进行过基础询问，但还没有进行过again询问，进行深化询问
+                    logging.error(f"[HANDLE_PROFILE] 第二次提供画像信息，设置_profile_asked_again=True，调用extend")
                     self._profile_asked_again = True
+                    self._save_profile_flags_to_session()
                     yield from self.ask_profile_extend_stream(text)
                     return
                 else:
                     # 已经进行过深化询问，转移到确认状态
+                    logging.error(f"[HANDLE_PROFILE] 第三次提供画像信息，转移到确认状态")
                     self.user_provides_profile(text)  # type: ignore
                     yield from self.ask_confirmation_stream()
                     return
             else:
+                logging.error(f"[HANDLE_PROFILE] 用户没有提供用户画像信息，检查下一步处理")
                 # 用户没有提供用户画像信息，检查是否已经进行过基础询问
                 if not self._profile_asked_basic:
                     # 第一次询问，标记已询问基础信息
+                    logging.error(f"[HANDLE_PROFILE] 第一次无画像信息，设置_profile_asked_basic=True，调用profile_again")
                     self._profile_asked_basic = True
+                    self._save_profile_flags_to_session()
                     # 使用静默模式预检查状态转换结果，避免双重回复
                     # 执行状态转换但不收集结果（因为是自循环）
                     self.slot_invalid_profile(text)  # type: ignore
@@ -2712,43 +2805,9 @@ class TravelAssistantFSM:
                     return
                 else:
                     # 已经询问过基础信息，进行深化询问
-                    # 设置 _profile_asked_again 标志，确保与非流式版本的逻辑一致
-                    if not self._profile_asked_again:
-                        self._profile_asked_again = True
-                        logging.info(f"[STREAM] 在profile_extend前设置_profile_asked_again=True")
-                    
-                    # 收集完整的响应流，检查是否有END标记
-                    full_content = ""
-                    has_end = False
-                    
-                    for chunk in self.ask_profile_extend_stream(text):
-                        if chunk['type'] == 'end' or chunk['type'] == 'silent_end':
-                            # 大模型确认了用户画像信息，转移到确认状态
-                            has_end = True
-                            full_content = chunk.get('full_content', full_content)
-                            break
-                        elif chunk['type'] == 'content':
-                            full_content += chunk.get('chunk', '')
-                            yield chunk
-                        elif chunk['type'] == 'done':
-                            # 正常完成，获取完整内容
-                            full_content = chunk.get('full_content', full_content)
-                            yield chunk
-                        else:
-                            yield chunk
-                    
-                    # 如果检测到END，转移到确认状态
-                    if has_end:
-                        # 确保END响应被保存到历史记录
-                        if full_content and full_content.strip().upper() != "END":
-                            self.add_assistant_message(full_content)
-                            logging.info(f"[STREAM] 手动保存END前的消息到历史: {full_content[:50]}...")
-                        
-                        self.user_provides_profile(text)  # type: ignore
-                        yield from self.ask_confirmation_stream()
-                        return
-                    else:
-                        return
+                    logging.error(f"[HANDLE_PROFILE] 已询问过基础信息但仍无画像信息，调用extend")
+                    yield from self.ask_profile_extend_stream(text)
+                    return
                 
         elif current_state == 'CONFIRMATION':
             # 确认状态
