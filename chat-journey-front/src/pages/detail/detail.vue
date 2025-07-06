@@ -181,11 +181,13 @@
 <script>
 import * as echarts from "echarts";
 import VChart from "vue-echarts";
+import { request } from "@/utils/request.js";
 
 export default {
   components: { "v-chart": VChart },
   data() {
     return {
+      tripId: null,
       tabs: ["总览", "每日详情", "地图模式"],
       activeTab: 0,
       itinerary: [],
@@ -252,6 +254,11 @@ export default {
     };
   },
   onLoad(options) {
+    if (options && options.id) {
+      this.tripId = options.id;
+      console.log('Detail page loaded with tripId:', this.tripId);
+      this.loadTripData();
+    }
     if (options.itinerary) {
       try {
         this.itinerary = JSON.parse(decodeURIComponent(options.itinerary));
@@ -270,6 +277,57 @@ export default {
     this.loadMap();
   },
   methods: {
+    async loadTripData() {
+      if (!this.tripId) return;
+      try {
+        const res = await request(`/api/planner/trips/${this.tripId}/`, {}, 'GET');
+        if (!res || res.error) {
+          uni.showToast({ title: '加载行程失败', icon: 'none' });
+          return;
+        }
+        // 支持 days 或 events 平铺两种格式
+        this.routeTitle = res.title || this.routeTitle;
+        let daysArr = res.days;
+        if (!Array.isArray(daysArr) && Array.isArray(res.events)) {
+          // 若只有 events 平铺，则按日期分组
+          const grouped = {};
+          res.events.forEach(ev => {
+            const dateStr = ev.date;
+            grouped[dateStr] = grouped[dateStr] || [];
+            grouped[dateStr].push(ev);
+          });
+          daysArr = Object.keys(grouped).sort().map((d, idx) => ({
+            day_index: idx + 1,
+            date: d,
+            events: grouped[d].sort((a,b)=>a.start_time.localeCompare(b.start_time))
+          }));
+        }
+        this.itinerary = (daysArr || []).map(day => {
+          return {
+            date: day.date,
+            weatherIcon: '☀️', // TODO: 可接天气API
+            temperature: '20/28℃',
+            events: (day.events || []).map(ev => ({
+              time: ev.start_time?.slice(0,5) || '00:00',
+              location: ev.location?.name || ev.location_name || ev.title,
+              image: this.getPlaceholderImage(ev),
+              subtext: ev.description || ev.category || ev.mode || '',
+            }))
+          };
+        });
+        console.log('Trip loaded, itinerary:', this.itinerary);
+      } catch (e) {
+        console.error('loadTripData error', e);
+        uni.showToast({ title: '加载失败', icon: 'none' });
+      }
+    },
+    getPlaceholderImage(ev) {
+      // 简单占位，后续可从 Location raw_data photos
+      const name = (ev.location_name || ev.title || '').toLowerCase();
+      if (name.includes('店') || name.includes('餐')) return '/static/images/food.jpg';
+      if (name.includes('机场')) return '/static/images/airport1.jpg';
+      return '/static/images/banner.jpg';
+    },
     goBack() {
       uni.navigateBack();
     },

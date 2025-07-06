@@ -181,21 +181,22 @@ class POIManagementService:
                 logger.info(f"POI已存在于会话中: {location}")
                 return True
             
-            # 直接使用完整的show_fields搜索，确保获取评分和图片信息
-            data = self.amap_client.text_search(
-                keywords=location, 
-                page_size=1,
-                show_fields="children,business,indoor,navi,photos"
+            poi_item_id = self.amap_client.reverse_search_poi(location)
+            if not poi_item_id:
+                logger.warning(f"未找到POI: {location}")
+                return False
+            from talker.models import POIItem, POISession
+            poi_item = POIItem.objects.get(id=poi_item_id)
+            _, created = POISession.objects.get_or_create(
+                session=session,
+                poi=poi_item,
+                defaults={"source": "reverse_search"}
             )
-            poi_list = data.get("pois", []) if data else []
-            if poi_list:
-                poi_data = poi_list[0]
-                result = self.add_poi_from_search_result(session, poi_data, 'reverse_search')
-                if result['success']:
-                    logger.info(f"成功逆搜索并添加POI: {poi_data.get('name', location)}")
-                    return True
-            logger.warning(f"未找到POI: {location}")
-            return False
+            if created:
+                logger.info(f"成功逆搜索并添加POI: {poi_item.name}")
+            else:
+                logger.info(f"POI已存在于会话: {poi_item.name}")
+            return True
         except AmapAPIError as e:
             logger.warning(f"高德API查询失败（{location}）：{e}")
             return False
@@ -209,20 +210,20 @@ class POIManagementService:
         """
         added_pois = []
         locations = session.locations or []
+        from talker.models import POIItem, POISession
         for location in locations:
             try:
-                # 直接使用完整的show_fields搜索，确保获取评分和图片信息
-                data = self.amap_client.text_search(
-                    keywords=location, 
-                    page_size=1,
-                    show_fields="children,business,indoor,navi,photos"
+                poi_item_id = self.amap_client.reverse_search_poi(location)
+                if not poi_item_id:
+                    continue
+                poi_item = POIItem.objects.get(id=poi_item_id)
+                _, created = POISession.objects.get_or_create(
+                    session=session,
+                    poi=poi_item,
+                    defaults={"source": "reverse_search"}
                 )
-                poi_list = data.get("pois", []) if data else []
-                if poi_list:
-                    poi_data = poi_list[0]
-                    result = self.add_poi_from_search_result(session, poi_data, 'reverse_search')
-                    if result['success']:
-                        added_pois.append(poi_data.get('name', location))
+                if created:
+                    added_pois.append(poi_item.name)
             except AmapAPIError as e:
                 logger.warning(f"高德API查询失败（{location}）：{e}")
             except Exception as e:
